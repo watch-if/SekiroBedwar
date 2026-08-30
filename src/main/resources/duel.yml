@@ -1,0 +1,404 @@
+# ============ SekiroWar 决斗系统配置（duel.yml） ============
+# 白色内圈 = visuals.inner-radius（与 DuelVisualizer 白圈同半径），冻结 / 区域限制 / 复活冻结共用。
+# 改动需重启服务器生效（sword-speed 的商店注入在启动时执行一次）。
+
+# ============ 一、战斗核心 ============
+
+# ---------- 架势系统（StanceManager） ----------
+# 每个玩家拥有当前架势值与最大架势值。最大架势按背包携带资源计算：
+#   Smax = base + multiplier * W
+#   W    = Σ (coeff * ln(1 + count))，count 为背包中该资源数量
+# 默认即 W = ln(1+铁) + 3ln(1+金) + 10ln(1+钻石) + 20ln(1+绿宝石)
+stance:
+  max-stance:
+    # 基础架势 S0
+    base: 50.0
+    # 转换倍率 k
+    multiplier: 2.0
+    # 资源类型名 -> 系数（只读背包，不修改物品）；以后增改资源类型在此添加
+    resources:
+      IRON_INGOT: 1.0
+      GOLD_INGOT: 3.0
+      DIAMOND: 10.0
+      EMERALD: 10.0
+  # 崩条（架势崩）与处决窗口（StanceBreakManager，独立模块）
+  # 临界状态 = 已消耗架势比例达到 critical-ratio（默认 1.0 = 架势条空 / current≈0）。
+  # 到达临界【不会】自动崩条，只有满足 trigger 条件才崩：
+  #   1. 临界中未能完美弹反对方的【近战】攻击（普通格挡或无格挡命中）→ 崩；
+  #      （远程/弓箭命中不崩，只会让对方持续维持临界状态）
+  #   2. 临界中自己的【近战】攻击被对方完美弹反 → 崩。
+  # 崩条 = 当前架势清零 + 进入结算/逃离窗口（execution-seconds）+ 短暂受击状态（stagger）。
+  break:
+    # 崩条触发临界线（1.0 = 架势条空 / current≈0）
+    critical-ratio: 1.0
+    # 崩条后结算 / 逃离窗口时长（秒；25s）。期间可逃离决斗场地（越界拉回/传送豁免），
+    # 处决者击杀被处决者 = 全额结算；窗口到期未击杀 = 只能结算对方一半物资并立即结束决斗
+    execution-seconds: 25
+    # 低血量阈值：决斗中每次受击后，血量 ≤ 该值（且未死亡）→ 架势强制拉到临界（不崩条），
+    # 幂等反复生效——低血量的玩家持续处于临界状态，下一次未弹反的近战命中就会崩条
+    low-health-threshold: 2.0
+    # 崩条后【受击状态】的时长（秒；默认 5s，与处决窗口分离）。
+    # 受击状态 = 崩条后的短暂限制窗口：期间【无法正常格挡】（盾牌强制冷却，
+    # 无法格挡也无法完美弹反），但仍可移动、仍可攻击；到期自动恢复。
+    # 设计语义：崩条 = 处决窗口（可被处决的战术窗口），不是“架势 = 第二血条”，
+    # 崩条本身不致死（结算靠处决窗口内击杀全额 / 窗口到期半额）。
+    stagger:
+      duration-seconds: 5.0
+      # 受击状态期间是否无法正常格挡（true = 强制盾牌冷却；false = 退化为纯状态标记，
+      # isStaggered() 仍为 true 但不做任何冷却强制）
+      disable-blocking: true
+    # 临界崩条触发开关
+    trigger:
+      # 临界中被对方普通格挡命中（未完美弹反）→ 崩条
+      break-on-blocked-hit: true
+      # 临界中被对方无格挡命中（未完美弹反）→ 崩条
+      break-on-unblocked-hit: true
+      # 临界中自己的攻击被对方（近战）完美弹反 → 崩条
+      break-on-parried-attack: true
+    # 受击状态强制的检测间隔（tick；5 = 0.25 秒）
+    guard-check-ticks: 5
+    # 结算模块周期检测“处决窗口是否到期”的间隔（tick；5 = 0.25 秒）
+    settle-check-ticks: 5
+  # 自然回血：架势非满（current < max，受过任何架势伤害）时不能自然恢复血量。
+  # 只阻断饥饿值触发的自然回血（SATIATED）；金苹果 / 药水等主动治疗不受影响。
+  health-regen:
+    block-natural: true
+  # 架势自然恢复：每秒 dS/dt = +r * Smax * (1/2 + x/2)，x = S/Smax（当前/最大）
+  # 与早期“自然下降”同一条曲线、方向相反：架势越接近满恢复越快（封顶于 max，满则停），
+  # 越接近崩条恢复越慢（被打到低谷后需一段时间才能爬回，保留崩条压力）；崩条（处决窗口）期间不恢复。
+  natural-recovery:
+    # 是否启用自然恢复
+    enabled: true
+    # 恢复速率 r（0.0-1.0 推荐；默认 0.16）
+    rate: 0.16
+    # 触发条件：距上次“战斗活跃”超过该秒数才开始自然恢复。
+    # 战斗活跃 = 产生攻击（攻击方成功出手，即使架势值不变也标记）/ 受到攻击 / 任意架势变化
+    # （被攻击扣架势、崩条等），都会重置计时暂停恢复。
+    # 即自然恢复只在“既没产生攻击、也没受到攻击”的持续空闲后才触发。
+    idle-seconds: 5
+  # 架势条展示（BossBar，决斗期间双方互显对方）
+  bossbar:
+    # BossBar 进度刷新间隔（tick）
+    refresh-ticks: 5
+    # 颜色 / 样式（org.bukkit.boss.BarColor / BarStyle 枚举名）
+    color: RED
+    style: SOLID
+    # 标题格式：%s 替换为对方玩家名
+    name-format: "&c%s 的架势"
+  # 经验条显示【自己】的架势（快捷栏上方绿条，与 BossBar 互显对手互补）：
+  # 经验条填充 = 自己架势剩余比例，隐藏等级数字。进入决斗时保存玩家原本经验值，
+  # 决斗结束后恢复原值；重生后由刷新任务自动重设。
+  xp-bar:
+    # 是否启用（false 时完全不占用玩家经验条）
+    enabled: true
+    # 刷新间隔（tick；2 = 0.1 秒）
+    refresh-ticks: 2
+
+# ---------- 完美弹反（ParryManager，独立模块） ----------
+# 本模块只负责"完美弹反"这一种分支；普通格挡 / 无格挡由下方的 block 段单独处理。
+# 只作用于进行中（ACTIVE）决斗内的近战命中；决斗外 / 投射物 / 第三方攻击一律保持原版。
+# 架势为消耗制：current 从 max 扣到 0 崩条（见 stance 段）。
+# 用户确认的最终公式（Dbase = 攻击方武器面板伤害，见 combat 包）：
+#   - 命中窗口（正在格挡且格挡开始于窗口内）：完整弹开攻击（免生命伤害与击退），
+#     攻击方架势 -= Dbase × parry-attacker-multiplier（惩罚攻击方）；
+#     弹反者自身 -= 固定值 parry-victim-cost（默认 5，不是乘数）
+#   - 完美弹反失败（未格挡，或格挡但超出窗口）：不判为完美弹反，
+#     按 block 段的普通格挡 / 无格挡规则处理
+#   - 弹反成功后一次按下只弹反一击：同一按住中的后续命中按普通格挡处理（防连续/快速攻击误判）
+parry:
+  # 是否启用完美弹反
+  enabled: true
+  # 完美弹反窗口（毫秒）：只检测「举盾后 base-window-ms 内」命中的攻击为完美弹反。
+  # 举盾时刻 = 格挡轮询（poll-ticks）记录到的格挡开始；命中落在 [举盾, 举盾 + base-window-ms] 内即完美弹反。
+  # 无攻击前 / 攻击后窗口之分、无网络延迟补偿；同 tick 刚举盾即命中由 0 延时兜底。
+  base-window-ms: 170
+  # 弹反的架势影响（重要调优项，放在补偿参数之前）
+  stance:
+    # 完美弹反：攻击方架势 -= Dbase（武器面板伤害）× 该值
+    parry-attacker-multiplier: 3.0
+    # 完美弹反：受击方（弹反者）架势 -= 该固定值（不是乘数；默认 5，用户设为 0 = 不扣自身架势）。
+    # 完美弹反成功后弹反者无论是否临界都进入维持态（markActive）：防止架势自然恢复
+    parry-victim-cost: 0.0
+  # isBlocking() 轮询间隔（tick；1 = 50ms，决定格挡开始时刻的记录精度）
+  poll-ticks: 1
+  # 网络补偿（只在 base-window-ms 窗口上放大，无攻击前/后之分、无 RTT/2 回溯）：
+  #   smoothRTT = EWMA(ping, α)
+  #   comp = min(comp-max-ms, max(0, (smoothRTT - comp-floor-ms) / comp-divisor))
+  #   effectiveWindow = base-window-ms + comp（默认 170 → 高延迟最多 +40 补偿）
+  latency:
+    # EWMA 平滑系数 α（0.0-1.0）
+    alpha: 0.2
+    # 补偿下限：smoothRTT ≤ 该值 → 补偿 0
+    comp-floor-ms: 50
+    # 补偿上限（毫秒）：高延迟补偿封顶
+    comp-max-ms: 40
+    # 补偿除数
+    comp-divisor: 2
+  # 完美弹反成功反馈：向双方各自位置播放音效（默认铁砧放置的清脆金属"叮"声）
+  feedback:
+    sound:
+      # 是否播放
+      enabled: true
+      # 音效名（org.bukkit.Sound 枚举名；非法名回退 BLOCK_ANVIL_PLACE）
+      name: BLOCK_ANVIL_PLACE
+      # 音量（0-2）
+      volume: 1.0
+      # 音调（0-2；1.0 = 原调）
+      pitch: 1.0
+  # 连续弹反计数器窗口（攻势无效，独立可配置开关）：
+  # 同一决斗中，玩家攻击连续被对方完美弹反 required-parries 次后，
+  # 接下来 duration-seconds 秒内该玩家的所有攻击（近战与弓箭）对对手无伤害、无作用
+  #（攻击一律被取消，不进入普通格挡 / 弹反换算）。
+  # “连续”的严格判定：相邻两次被完美弹反间隔超过 max-interval-seconds 即断开（重新计 1）；
+  # 中间有一次普通格挡（未命中完美窗口）或成功命中（近战/弓箭）也断开。
+  # 被封印期间命中一律无效。（不发送文字提示，保持战斗沉浸）
+  seal:
+    # 是否启用该机制
+    enabled: true
+    # 连续被对方完美弹反多少次后触发（>=1；默认 4）。
+    required-parries: 4
+    # 连续判定的时间窗（秒，可为小数；默认 0.7）：相邻两次被完美弹反间隔超过该值即不算连续
+    max-interval-seconds: 0.7
+    # 攻势无效持续时长（秒，可为小数；默认 0.5 秒）
+    duration-seconds: 0.5
+
+# ---------- 普通格挡 / 受击架势（BlockManager，独立模块） ----------
+# 与完美弹反分离：完美弹反（HIGH 优先级）只处理命中窗口的攻击并取消它；
+# 其余全部命中（近战 + 弓箭/投射物）在本段处理。普通格挡不会完全避免架势增加。
+# 用户确认的最终公式：
+#   Dactual = 打出的实机血量伤害（getFinalDamage，护甲等减伤后的实际扣血量）
+#   Dbase   = 武器基础伤害 = 所用武器数值面板上的伤害（近战；弓箭用投射物实际基础伤害）
+#   - 无格挡命中（ΔS肉）：受击方架势 -= Dactual × hit-multiplier（默认 2.5），生命伤害按原版
+#   - 普通格挡（ΔS格挡，盾牌格挡、未命中完美弹反窗口）：
+#       防守方架势 -= Dbase × defender-multiplier（默认 1.5，不完全免架势）；
+#       （用户确认移除对攻击方的小幅扣架势）
+block:
+  # 是否启用普通格挡 / 受击架势变化（false 时该模块零介入，完全原版战斗）
+  enabled: true
+  stance:
+    # 无格挡命中：受击方架势 -= Dactual（实机血量伤害）× 该值
+    hit-multiplier: 2.5
+    # 普通格挡：防守方架势 -= Dbase（武器面板伤害）× 该值
+    defender-multiplier: 1.5
+  # 破盾（斧头命中普通格挡，非完美弹反）：更高架势扣减 + 短暂无法格挡状态。
+  # 完美弹反成功的命中在 HIGH 优先级已被取消，绝不会触发破盾。
+  shield-break:
+    # 是否启用破盾
+    enabled: true
+    # 触发破盾的武器（默认六种斧）
+    materials: [WOODEN_AXE, STONE_AXE, IRON_AXE, GOLDEN_AXE, DIAMOND_AXE, NETHERITE_AXE]
+    # 破盾时防守方架势扣除倍率（替换普通格挡 defender-multiplier）
+    stance-multiplier: 3.0
+    # 破盾后短暂无法格挡时长（秒）
+    disable-blocking-seconds: 3.0
+
+# ---------- 决斗资源结算（SettlementConfig） ----------
+# 四种结算情形，各配独立比例（值钳制 [0,1]，0 = 不转移）：
+#   1. 崩条死亡 / 处决（处决窗口内被杀 或 处决窗口到期）：败者资源按比例转移给胜者（默认先测 50%）
+#   2. 普通死亡（未崩条被对方击杀）：全额转移
+#   3. 虚空死亡（被击落虚空 = 决斗死亡）：视同普通击杀，全额转移
+#   4. 第三方介入结束决斗：不转移，双方资源回滚到决斗开始状态
+settlement:
+  break-kill-ratio: 0.5
+  normal-kill-ratio: 1.0
+  void-kill-ratio: 1.0
+
+# ============ 二、决斗触发与流程 ============
+
+# ---------- 触发条件（DuelTriggerManager） ----------
+# 触发前提（全部满足才触发决斗）：
+#   1. 两名玩家处于同一对局（同一 LocalGame）且对局进行中（RUNNING）；
+#   2. 两人队伍不同（敌对），且都在队伍中、非观战、两队存活；
+#   3. 双方在 attack-recall-seconds 窗口内都“有效主动命中”过对方；
+#   4. 两人位于同一“决斗岛屿”内（以两人中点为圆心、半径为 radius 的圆，
+#      且圆内下方为实体方块而非虚空）；
+#   5. 岛屿外围（以两人中点为圆心、半径 radius + outer-radius 的范围）内不存在第三方玩家；
+#   6. 同一对玩家不在触发冷却中。
+# 靠近 / 空挥 / 搭方块 / 普通移动 一律不会触发决斗。
+
+# 岛屿半径 x（方块）：以两名玩家间距中点为圆心，向外延伸 x 格为圆的检测范围
+radius: 14
+# “双方有效主动攻击”追溯窗口（秒）：两人都必须在最近 N 秒内命中过对方
+attack-recall-seconds: 5
+# 有效攻击是否仅限近战直接命中（true）；false 时弓箭/投射物命中也算
+melee-only: true
+# 有效攻击最低造成伤害（final damage，必须严格大于该值才算有效；默认 0 即“确实造成了伤害”）
+min-damage: 0.0
+# 同一对两位玩家触发一次决斗后的冷却（秒），防止战斗中反复触发
+duel-cooldown-seconds: 30
+# 是否校验岛屿“下方是实体方块而非虚空”
+require-solid-ground: true
+# 岛屿实心校验采样点数（含圆心，沿圆周均匀采样；越大越严格）
+solid-check-points: 16
+# 采样点中“有方块（非空气、非液体）”的最低比例（0.0-1.0）
+solid-min-ratio: 0.5
+# 合法岛屿判定附加条件：范围内“非虚空”采样点比例达到该值即可算合法岛屿
+#（即下方不完全是虚空就允许决斗，允许水面/岩浆面等不实心的区域）。
+# 判定 = 实心校验通过 或 非虚空比例 >= 该值（任一满足即可）。
+non-void-min-ratio: 0.9
+
+# ---------- 触发后视觉（visuals） ----------
+# 白色内圈半径 y 同时也是冻结 / 区域限制共用的「白圈」半径。
+visuals:
+  # 白色粒子内圆半径 y（方块）
+  inner-radius: 10.0
+  # 红色粒子外圆半径 z（方块）；同时兼作岛屿外围排除第三方玩家的半径：
+  # 圆心向外 (radius + z) 范围内不允许出现第三方玩家（跨入红圈即被队伍色高亮标记）
+  outer-radius: 14.0
+  # 每圈粒子采样点数
+  points: 32
+  # 粒子刷新间隔（tick；20 tick = 1 秒）
+  refresh-ticks: 5
+  # 是否用 GLOWING（光箭矢效果）高亮：双方决斗玩家全程高亮（直到决斗结束）；
+  # 第三方跨入红圈时用其队伍颜色高亮标记（见下方 third-party-highlight-ticks）。
+  # 注意：圆心与双圈粒子在触发时锁定，持续到决斗结束（不再按 duration 自动消失）。
+  glow: true
+  # 第三方跨入红圈（岛屿半径 + 外圆半径 排除范围）后的高亮标记时长（tick；20 = 1 秒）
+  third-party-highlight-ticks: 20
+
+# ---------- 决斗生命周期（DuelManager） ----------
+# 触发后进入 PENDING，经过 pending-seconds 后自动进入 ACTIVE
+duel:
+  # PENDING → ACTIVE 缓冲时长（秒）；期间第三方进入排除范围则直接结束
+  pending-seconds: 0.5
+  # 每 N tick 检测一次：第三方进入排除范围 / 决斗者下线或离局 / 对局结束
+  check-ticks: 5
+
+# ---------- 决斗区域限制（DuelAreaGuard） ----------
+# 决斗期间（PENDING/ACTIVE）双方不能主动离开边界；被攻击击退（含被击落虚空）不受限。
+area:
+  # 是否启用区域限制
+  enabled: true
+  # 边界半径 = visuals.inner-radius（白圈）；玩家不能主动离开该范围。
+  # 当前 inner-radius = 10.0，如需更大活动空间请调大 visuals.inner-radius。
+  # 越界检测间隔（tick；20 tick = 1 秒）
+  check-ticks: 5
+  # 被攻击击退后允许越界的窗口（tick；30 = 1.5 秒）。
+  # 窗口内且移动方向与击退方向一致时视为击退位移，不拉回。
+  knockback-grace-ticks: 30
+  # 拉回时距边界内的距离（格）
+  pullback-margin: 1.0
+  # 是否拦截「把方块搭到边界外」的搭路逃离（越界方块放置被取消）
+  block-place-escaping: true
+  # 拦截的主动传送原因（逗号分隔）：这些传送的落点越界即取消（珍珠/紫颂果无法越界）。
+  block-teleport-causes: ENDER_PEARL,CHORUS_FRUIT
+
+# ============ 三、附加系统 ============
+
+# ---------- 决斗冻结系统（freeze 模块） ----------
+# 围绕「决斗白色内圈」（visuals.inner-radius，与 DuelVisualizer 白圈同半径）的三个规则。
+freeze:
+  # --- 物资刷新冻结 ---
+  # 刷新点位于任一决斗白色内圈内时：计时照常、暂停实际生成（拦截 ResourceSpawnEvent），
+  # 把该次生成量累计为「待生成资源」；决斗结束后按下一次正常刷新节点统一补出
+  #（与正常量合并为一堆，经 BedWars 地面上限自然约束）。
+  # 缓存受 max-cache-seconds 窗口限制（决斗时长无上限，避免缓存无限膨胀）：窗口内的量保留，
+  # 窗口外的溢出丢弃；0 = 不缓存、全部丢弃。
+  resource:
+    enabled: true
+    max-cache-seconds: 120
+  # --- 队伍复活冻结 ---
+  # 队伍床位于任一决斗白色内圈内期间，本队成员死亡不开始正常复活倒计时，进入待复活状态；
+  # 决斗结束后恢复正常复活流程。边界：冻结期间床被拆 / 队伍灭亡 → 视为最终死亡不复活；
+  # 决斗被第三方解除 / 玩家下线 / 离局 / 对局结束 → 自动恢复或清理。
+  respawn:
+    enabled: true
+  # --- 决斗双方方块保护（仅对两名决斗者生效，其余玩家不受影响） ---
+  # 决斗者破坏方块仅在决斗范围（岛屿 radius）内禁止；
+  # 决斗者搭建方块在决斗期间全图禁止（其余玩家搭建 / 破坏均正常）。
+  block-break:
+    enabled: true
+    area-only: true
+  block-place:
+    enabled: true
+
+# ---------- 剑攻速强化（SpeedManager，独立模块） ----------
+# 商店可购买的等级化强化：购买后给玩家实体加 ATTACK_SPEED 修正（ADD_NUMBER），
+# 降低本人所有近战武器（剑/斧）的攻击冷却。
+sword-speed:
+  # 是否启用（false 时不注入商店、不拦截购买）
+  enabled: true
+  # 最大强化等级（也决定商店生成的物品数量；不能超过下方 prices 条数，多的自动截断）
+  max-level: 3
+  # 每级提升的攻击速度（AttributeModifier ADD_NUMBER）
+  per-level-attack-speed: 0.3
+  # 总攻速上限：拿剑时的总攻速（melee-base-attack-speed + 强化修正）不得超过该值。
+  # 默认 3.0 → 强化修正上限 = 3.0 - 1.6 = 1.4；默认 3 级共 +0.9 → 持剑总攻速 2.5（冷却 8 tick）
+  max-attack-speed: 3.0
+  # 近战基础攻速（默认=剑 1.6；斧为 1.0），用于计算强化上限
+  melee-base-attack-speed: 1.6
+  # 商店类别图标（material 也用作品 marker 物品类型，需非堆叠以阻止 shift 连点多扣）
+  category:
+    material: DIAMOND_SWORD
+    name: "剑攻速强化"
+    lore:
+      - "永久提升你的近战攻击速度（本局）"
+  # 每个等级的购买价格（条数 = 有效最大等级；currency 用 BedWars 资源名 bronze/iron/gold/diamond/emerald）
+  prices:
+    - currency: iron
+      amount: 5
+    - currency: iron
+      amount: 10
+    - currency: gold
+      amount: 5
+
+# ---------- 剑格挡（SwordBlockingManager，独立模块） ----------
+# 本模块检测到该组件可用时，给剑赋予盾牌格挡能力：剑右键举盾格挡、可被斧头破盾、右键禁用。
+sword-blocking:
+  # 是否启用
+  enabled: true
+  # 赋予格挡的剑（材料名；留空则默认六种剑）
+  materials: [WOODEN_SWORD, STONE_SWORD, IRON_SWORD, GOLDEN_SWORD, DIAMOND_SWORD, NETHERITE_SWORD]
+  # 扫描在线玩家手持/背包剑的间隔（tick；10 = 0.5 秒，标记后幂等不反复改写）
+  scan-ticks: 10
+
+# ---------- 巴之雷（LightningManager，独立模块） ----------
+# 商店两级购买：L1 只获得「三连击接跳斩落雷」效果；L2 附赠忠诚三叉戟（含 L1 效果），
+# 且三叉戟远程命中可衔接落雷。购买依次进行、不可跳级。
+lightning:
+  # 是否启用
+  enabled: true
+  # 雷击伤害（×4/×3.5/×3 乘数的基准）
+  lightning-damage: 3.0
+  # 雷击架势扣除倍率
+  lightning-stance-multiplier: 4.0
+  # 三连击（L1）：连续 required-hits 次有效架势命中（间隔 ≤ max-interval-ms）后，
+  # 开启 jump-window-ms 跳击窗口；窗口内空中攻击命中即落雷
+  combo:
+    required-hits: 3
+    max-interval-ms: 700
+    jump-window-ms: 3000
+  # 三叉戟衔接（L2）：远程命中后 hit-window-ms 内目标被有效架势命中 → 开启 jump-window-ms 跳击窗口
+  trident:
+    hit-window-ms: 2000
+    jump-window-ms: 3000
+  # 雷反：被雷击者非落地且 window-ms 内攻击雷击者 → 恢复血量+架势、返还对方架势
+  reversal:
+    window-ms: 170
+    heal-hp: 2.5
+    heal-hp-wood: 3.0
+    return-multiplier: 3.5
+    return-multiplier-wood: 3.0
+  # 商店（L1 diamond / L2 emerald + 忠诚三叉戟）
+  shop:
+    enabled: true
+    category-material: TRIDENT
+    category-name: "巴之雷"
+    level-1-currency: diamond
+    level-1-amount: 1
+    level-2-currency: emerald
+    level-2-amount: 1
+
+# ============ 四、示例与杂项 ============
+
+# ---------- 可选：预先配置的决斗岛屿白名单 ----------
+# 留空（islands: {}） = 任意实心地面区域都允许决斗。
+# 配置后，两人中点圆（radius）必须整体落在某个白名单岛屿内才允许触发
+#（即“位于同一个预先配置的决斗岛屿区域内”）。
+islands: {}
+  # 示例：
+  #  main:
+  #    world: world
+  #    center-x: 0.0
+  #    center-z: 0.0
+  #    radius: 30
