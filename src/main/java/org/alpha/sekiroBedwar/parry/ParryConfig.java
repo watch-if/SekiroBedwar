@@ -27,7 +27,7 @@ import java.util.Locale;
  * Dbase = 攻击方武器面板伤害，见 {@code combat/} 包）：
  * <ul>
  *   <li>完美弹反：攻击方架势 −= <b>Dbase</b> × {@code parry-attacker-multiplier}（默认 3.0）；</li>
- *   <li>受击方（弹反者）自身 −= <b>固定值</b> {@code parry-victim-cost}（用户设为 0 = 不扣自身架势），
+ *   <li>受击方（弹反者）自身 −= <b>固定值</b> {@code parry-victim-cost}（0 = 不扣自身架势），
  *       且无论是否临界都进入<b>维持态</b>（{@code markActive}）：刷新 idle 计时、
  *       防止架势自然恢复——成功弹反把当前架势"锁"在当前值，不能靠弹反拖时间回架势。</li>
  * </ul>

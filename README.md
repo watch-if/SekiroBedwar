@@ -1,4 +1,4 @@
-# SekiroBedwar
+# SekiroBedwar（SekiroWar）
 
 > **免责声明**：SekiroBedwar 是独立开发的 Minecraft 插件，与 FromSoftware Inc.
 > 及 Bandai Namco Entertainment Inc. 无任何关联。

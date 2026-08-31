@@ -28,7 +28,7 @@ import java.util.Optional;
  * “受到攻击”均刷新自然下降 idle 计时（攻击方架势值可能不变，仍需维持不自然下降）。</li>
  *   <li><b>普通格挡</b>（ΔS格挡，盾牌格挡、未命中完美弹反窗口）：不完全免架势——
  *       防守方架势 −= <b>Dbase</b>（武器面板伤害）× {@code defender-multiplier}（默认 1.5），
- *       <b>攻击方不扣架势</b>（用户确认移除），生命伤害走原版盾牌减伤；</li>
+ *       <b>攻击方不扣架势</b>，生命伤害走原版盾牌减伤；</li>
  *   <li><b>破盾</b>（{@code block.shield-break.*}）：攻击方主手为配置的破盾武器（斧）命中普通格挡时，
  *       防守方架势 −= Dbase × {@code shield-break.stance-multiplier}（更高倍率），
  *       并短暂禁用其格挡（{@link StanceManager#disableBlocking} + 盾牌强制冷却）。</li>
@@ -115,7 +115,7 @@ public final class BlockManager {
 
         if (victim.isBlocking()) {
             // 普通格挡（ΔS格挡）：不完全免架势——防守方架势 -= Dbase（武器面板伤害）× defender-multiplier。
-            // 攻击方不扣架势（用户确认移除 attacker-multiplier）。
+            // 攻击方不扣架势。
             // 破盾：攻击方主手为配置的破盾武器（斧）→ 更高倍率扣减 + 短暂禁用防守方格挡。
             double db = CombatUtils.baseDamage(attacker, event);
             if (config.shieldBreakEnabled() && isShieldBreaker(attacker)) {

@@ -18,7 +18,7 @@ import java.util.UUID;
  * {@code duration-seconds}（{@code parry.seal.duration-seconds}）秒内该玩家的所有攻击
  * （近战与弓箭）对对手<b>无伤害、无作用</b>（攻势无效，攻击一律被取消，不进入普通格挡 / 弹反换算）。
  *
- * <p><b>“连续”的严格判定</b>（用户需求）：
+ * <p><b>“连续”的严格判定</b>：
  * <ul>
  *   <li><b>时间窗</b>：相邻两次被完美弹反的间隔 ≤ {@code max-interval-seconds}
  *       （{@code parry.seal.max-interval-seconds}，默认 0.7s）才累计；间隔更长或首次弹反 → 重新计 1；</li>
