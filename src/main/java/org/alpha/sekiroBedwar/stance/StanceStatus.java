@@ -6,7 +6,7 @@ package org.alpha.sekiroBedwar.stance;
  * <p>优先级：{@link #BROKEN} &gt; {@link #CRITICAL} &gt; {@link #NORMAL}。
  * 不在决斗中（无架势状态）恒为 {@link #NORMAL}。</p>
  *
- * <p><b>设计语义（用户确认）</b>：崩条 = <b>处决窗口</b>（{@link #BROKEN}），
+ * <p><b>设计语义</b>：崩条 = <b>处决窗口</b>（{@link #BROKEN}），
  * 不是「架势 = 第二血条」——崩条本身不致死，只表示目标处于可被处决的战术窗口
  * （配合结算模块击杀全额 / 窗口到期半额）。</p>
  */

@@ -47,7 +47,7 @@ import java.util.UUID;
  * 原版死亡重生重建玩家实体，属性修正不保留 → {@link PlayerRespawnedEvent} 后 1 tick 重应用
  * （对齐 BedWars 自己 EnchantmentUpgradeHandler 的做法）；{@code removeModifier} 先行保证幂等
  * （1.21.1 重生恢复属性时修正可能残留，重复 addModifier 会抛重复键异常）。离局 / 退出服务器 /
- * 重进清理残留修正（本局有效，用户确认）。</p>
+ * 重进清理残留修正（本局有效）。</p>
  */
 public final class SpeedManager {
     private static final String MARKER_START = "# === SekiroBedwar sword-speed START ===";

@@ -19,7 +19,7 @@ import java.util.Map;
  * 服务端生效、不改客户端。MC 1.21 攻击冷却 = 20 ÷ 攻速；玩家基础攻速属性 4.0，
  * 剑带 -2.4 物品修正 → 持剑总攻速 1.6（冷却 12.5 tick）。本强化在其上加正修正。</p>
  *
- * <p><b>总攻速上限口径</b>（用户确认「总攻速属性上限」）：拿剑时的总攻速
+ * <p><b>总攻速上限口径</b>：拿剑时的总攻速
  * （{@code melee-base-attack-speed} + 强化修正）不超过 {@code max-attack-speed}，
  * 即强化修正上限 = {@code max-attack-speed - melee-base-attack-speed}（默认 3.0 - 1.6 = 1.4）。</p>
  */

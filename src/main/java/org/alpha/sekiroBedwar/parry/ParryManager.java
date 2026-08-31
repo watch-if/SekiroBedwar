@@ -40,7 +40,7 @@ import java.util.Optional;
  *
  * <p><b>临界状态语义</b>：完美弹反成功后弹反者无论是否临界都进入维持态
  * （{@link StanceManager#markActive}）——刷新 idle 计时、防止架势自然恢复，把当前架势"锁"住；
- * 自身扣费为固定值 {@code parry-victim-cost}（用户设为 0 = 不扣）。被弹反方（攻击者）仅在
+ * 自身扣费为固定值 {@code parry-victim-cost}（0 = 不扣）。被弹反方（攻击者）仅在
  * <b>本就处于临界</b>（扣架势<b>之前</b>评估，弹反惩罚扣到 0 不算临界）时，由
  * {@link StanceBreakManager#onAttackParried} 触发架势崩溃——临界玩家近战攻击被完美弹反才崩。</p>
  *
@@ -144,7 +144,7 @@ public final class ParryManager {
             return;
         }
         // 完美弹反：完整弹开这次攻击（cancel 同时免生命伤害与击退，弹反者不被推走）。
-        // 用户公式：攻击方架势 -= Dbase（武器面板伤害）× parry-attacker-multiplier；
+        // 攻击方架势 -= Dbase（武器面板伤害）× parry-attacker-multiplier；
         // 弹反者自身 -= 固定值 parry-victim-cost（默认 5）。
         double db = CombatUtils.baseDamage(attacker, event);
         event.setCancelled(true);
@@ -160,11 +160,11 @@ public final class ParryManager {
         sealManager.onAttackParried(attacker);
         // 崩条判定：在扣架势【之前】评估攻击方是否本就处于临界——弹反惩罚（Dbase×乘数）
         // 扣到 0 不算临界，只有【本就临界】的玩家近战攻击被完美弹反才触发架势崩溃
-        //（用户确认的崩条触发规则：临界 + 近战被弹反）。
+        //（崩条触发规则：临界 + 近战被弹反）。
         stanceBreakManager.onAttackParried(attacker);
         // 完美弹反惩罚：攻击方架势 -= Dbase（武器面板伤害）× parry-attacker-multiplier。
         stanceManager.reduceStance(attacker.getUniqueId(), db * config.parryAttackerMultiplier());
-        // 弹反者自身架势 - parry-victim-cost（用户设为 0 = 不扣自身架势）；
+        // 弹反者自身架势 - parry-victim-cost（0 = 不扣自身架势）；
         // 无论是否临界都进入维持态（markActive）：刷新 idle 计时、防止架势自然恢复——
         // 成功弹反把当前架势"锁"在当前值，不能靠拖时间 / 弹反来恢复架势。
         stanceManager.reduceStance(victim.getUniqueId(), config.parryVictimCost());

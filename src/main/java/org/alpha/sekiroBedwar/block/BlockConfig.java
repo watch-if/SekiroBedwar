@@ -13,13 +13,13 @@ import java.util.Set;
  * 普通格挡 / 受击架势配置：封装 <code>duel.yml</code> 的 <code>block:</code> 段。
  *
  * <p>消耗制架势（current 从 max 扣到 0 崩条，见 {@code stance/} 包）。
- * 用户确认的最终公式（Dbase = 攻击方武器面板伤害，Dactual = 实机血量伤害，见 {@code combat/} 包）：
+ * 最终公式（Dbase = 攻击方武器面板伤害，Dactual = 实机血量伤害，见 {@code combat/} 包）：
  * <ul>
  *   <li><b>无格挡命中</b>（ΔS肉）：受击方架势 −= <b>Dactual</b>（实机血量伤害，{@code getFinalDamage()}）
  *       × {@code hit-multiplier}（默认 2.5）；</li>
  *   <li><b>普通格挡</b>（ΔS格挡，盾牌格挡、未命中完美弹反窗口）：不完全免架势——
  *       防守方架势 −= <b>Dbase</b>（武器面板伤害）× {@code defender-multiplier}（默认 1.5）；
- *       <b>攻击方不再扣架势</b>（用户确认移除 attacker-multiplier）。</li>
+ *       <b>攻击方不扣架势</b>。</li>
  * </ul></p>
  *
  * <p>与完美弹反分离：弹反专用乘数 / 弹反者固定值仍在 <code>parry:</code> 段，由 {@code parry/}
