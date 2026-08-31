@@ -210,13 +210,19 @@ public final class PaperDollManager {
         if (holder == null) {
             return;
         }
-        ItemStack bought = holder.as(ItemStack.class);
+        ItemStack bought;
+        try {
+            bought = holder.as(ItemStack.class);
+        } catch (RuntimeException ex) {
+            plugin.getLogger().warning("读取纸人购买物品失败: " + ex.getMessage());
+            return;
+        }
         if (bought == null || bought.getType() != config.material()) {
             return;
         }
         String name = bought.hasItemMeta() && bought.getItemMeta().hasDisplayName()
                 ? ChatColor.stripColor(bought.getItemMeta().getDisplayName()) : "";
-        if (!name.equals(config.name())) {
+        if (!name.contains(config.name())) {
             return;
         }
         ev.setCancelled(true);
@@ -249,7 +255,22 @@ public final class PaperDollManager {
         if (currency == null) {
             return false;
         }
-        return player.getInventory().removeItem(new ItemStack(currency, amount)).isEmpty();
+        int remaining = amount;
+        ItemStack[] contents = player.getInventory().getContents();
+        for (int i = 0; i < contents.length && remaining > 0; i++) {
+            ItemStack item = contents[i];
+            if (item == null || item.getType() != currency) {
+                continue;
+            }
+            if (item.getAmount() > remaining) {
+                item.setAmount(item.getAmount() - remaining);
+                remaining = 0;
+            } else {
+                remaining -= item.getAmount();
+                player.getInventory().setItem(i, null);
+            }
+        }
+        return remaining <= 0;
     }
 
     private ItemStack makePaperDoll(Player player) {
