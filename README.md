@@ -30,8 +30,9 @@
 | **决斗区域限制** (`DuelAreaGuard`) | 决斗期间不能主动离开白圈、搭路越界、传送越界（击退位移豁免） |
 | **决斗冻结** (`freeze`) | 白圈内物资刷新暂停、队伍复活挂起、决斗双方方块保护 |
 | **剑攻速强化** (`SpeedManager`) | 商店购买、等级化，降低近战攻击冷却（幂等注入 shop.yml） |
-| **剑格挡** (`SwordBlockingManager`) | 1.21.2+ 给剑赋予盾牌格挡能力（右键举盾、可被斧破盾） |
-| **巴之雷** (`LightningManager`) | 商店两级购买：三连击接跳斩落雷（L1）、忠诚三叉戟衔接（L2）、雷反 |
+| **剑格挡** (`SwordBlockingManager`) | 1.21.8+ 给剑赋予盾牌格挡能力（blocks_attacks 组件，右键举盾、可被斧破盾） |
+| **巴之雷** (`LightningManager`) | 商店两级购买：三连击接跳斩落雷（L1）、忠诚三叉戟衔接（L2）、雷反；落雷消耗纸人 |
+| **纸人** (`PaperDollManager`) | 忍具系统铺垫资源：动态价格购买、背包绑定上限、抛投物消耗、投掷命中传送 |
 
 ---
 
@@ -112,6 +113,7 @@ mvn clean package
 | `sword-speed` | 剑攻速强化等级、价格 |
 | `sword-blocking` | 剑格挡 |
 | `lightning` | 巴之雷（雷击、三连击、三叉戟、雷反、商店价格） |
+| `paper-doll` | 纸人（价格、背包上限、抛投物绑定、命中传送、巴之雷消耗） |
 | `islands` | 可选的决斗岛屿白名单（留空 = 任意实心地面都允许决斗） |
 
 完整配置项与默认值见 `src/main/resources/duel.yml`。
@@ -129,6 +131,7 @@ src/main/java/org/alpha/sekiroBedwar/
 ├── event/                   # DuelTriggeredEvent / DuelEndedEvent 自定义事件
 ├── freeze/                  # 物资刷新冻结、复活冻结、方块保护
 ├── lightning/               # 巴之雷（雷击 / 雷反）
+├── paperdoll/               # 纸人（忍具系统铺垫资源）
 ├── parry/                   # 完美弹反、延迟补偿、连续弹反封印
 ├── speed/                   # 剑攻速强化（商店注入）
 ├── stance/                  # 架势系统（状态、BossBar、经验条、恢复、崩条）
@@ -164,3 +167,4 @@ Copyright (c) 2026 b站zhenshicai
 特定用途的适用性和非侵权性的保证。在任何情况下，作者或版权持有人均不对任何索赔、
 损害或其他责任负责，无论是在合同、侵权或其他方面，因本软件或本软件的使用或其他交易而产生、由此产生或与之相关。
 ```
+
