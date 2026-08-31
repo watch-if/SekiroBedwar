@@ -4,6 +4,7 @@ import org.alpha.sekiroBedwar.SekiroBedwar;
 import org.alpha.sekiroBedwar.duel.Duel;
 import org.alpha.sekiroBedwar.duel.DuelManager;
 import org.alpha.sekiroBedwar.duel.DuelState;
+import org.alpha.sekiroBedwar.paperdoll.PaperDollManager;
 import org.alpha.sekiroBedwar.stance.StanceManager;
 import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
@@ -58,6 +59,7 @@ public final class LightningManager {
     private final LightningConfig config;
     private final StanceManager stanceManager;
     private final DuelManager duelManager;
+    private final PaperDollManager paperDollManager;
     private final LightningListener listener;
 
     /** 购买等级：0 未购 / 1 一级 / 2 二级。 */
@@ -77,11 +79,13 @@ public final class LightningManager {
     private final Map<UUID, Strike> strikes = new HashMap<>();
 
     public LightningManager(SekiroBedwar plugin, LightningConfig config,
-                            StanceManager stanceManager, DuelManager duelManager) {
+                            StanceManager stanceManager, DuelManager duelManager,
+                            PaperDollManager paperDollManager) {
         this.plugin = plugin;
         this.config = config;
         this.stanceManager = stanceManager;
         this.duelManager = duelManager;
+        this.paperDollManager = paperDollManager;
         this.listener = new LightningListener(this);
     }
 
@@ -188,8 +192,8 @@ public final class LightningManager {
         if (!strike.striker.equals(victim.getUniqueId())) {
             return false;
         }
-        if (attacker.isOnGround()) {
-            return false; // 必须非落地
+        if (!strike.airborne) {
+            return false;
         }
         strikes.remove(id);
         boolean wood = attacker.getInventory().getItemInMainHand().getType() == Material.WOODEN_SWORD;
@@ -259,6 +263,9 @@ public final class LightningManager {
         if (victim == null || !victim.isOnline() || victim.isDead()) {
             return;
         }
+        if (paperDollManager != null && !paperDollManager.consumePaperDolls(attacker, paperDollManager.cost())) {
+            return;
+        }
         double dmg = config.lightningDamage();
         double stanceDeduct = dmg * config.lightningStanceMultiplier();
         victim.getWorld().strikeLightningEffect(victim.getLocation());
@@ -266,7 +273,8 @@ public final class LightningManager {
         stanceManager.reduceStance(victim.getUniqueId(), stanceDeduct);
         stanceManager.markActive(victim.getUniqueId());
         strikes.put(victim.getUniqueId(),
-                new Strike(attacker.getUniqueId(), now() + config.reversalWindowMs(), dmg, stanceDeduct));
+                new Strike(attacker.getUniqueId(), now() + config.reversalWindowMs(), dmg, stanceDeduct,
+                        !victim.isOnGround()));
     }
 
     // ============ 商店 ============
@@ -448,12 +456,14 @@ public final class LightningManager {
         final long until;
         final double damage;
         final double stanceDeducted;
+        final boolean airborne;
 
-        Strike(UUID striker, long until, double damage, double stanceDeducted) {
+        Strike(UUID striker, long until, double damage, double stanceDeducted, boolean airborne) {
             this.striker = striker;
             this.until = until;
             this.damage = damage;
             this.stanceDeducted = stanceDeducted;
+            this.airborne = airborne;
         }
     }
 }

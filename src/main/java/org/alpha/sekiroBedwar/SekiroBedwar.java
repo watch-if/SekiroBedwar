@@ -9,6 +9,8 @@ import org.alpha.sekiroBedwar.freeze.ResourceFreezeManager;
 import org.alpha.sekiroBedwar.freeze.RespawnFreezeManager;
 import org.alpha.sekiroBedwar.lightning.LightningConfig;
 import org.alpha.sekiroBedwar.lightning.LightningManager;
+import org.alpha.sekiroBedwar.paperdoll.PaperDollConfig;
+import org.alpha.sekiroBedwar.paperdoll.PaperDollManager;
 import org.alpha.sekiroBedwar.duel.DuelConfig;
 import org.alpha.sekiroBedwar.duel.DuelManager;
 import org.alpha.sekiroBedwar.duel.DuelTriggerManager;
@@ -81,6 +83,7 @@ public final class SekiroBedwar extends JavaPlugin {
     private RespawnFreezeManager respawnFreezeManager;
     private SwordBlockingManager swordBlockingManager;
     private LightningManager lightningManager;
+    private PaperDollManager paperDollManager;
 
     @Override
     public void onEnable() {
@@ -122,15 +125,17 @@ public final class SekiroBedwar extends JavaPlugin {
         this.stanceBreakManager = new StanceBreakManager(this, stanceConfig, stanceManager);
         this.stanceBreakManager.enable();
 
-        // 剑攻速强化（独立模块）：商店可购买，等级化，作用于本人所有近战武器。
-        // enable 时把「剑攻速强化」类别幂等注入 ScreamingBedWars 的 shop/shop.yml（巴之雷并入该类别），
-        // 用 StorePrePurchaseEvent 拦截购买（取消 + 自扣费 + 加 ATTACK_SPEED 修正）。
+        // 剑攻速强化
         this.speedManager = new SpeedManager(this, new SpeedConfig(this));
         this.speedManager.enable();
 
-        // 巴之雷（雷击 / 雷反，独立模块）：商店两级购买（L1 三连击接跳斩落雷 / L2 附忠诚三叉戟），
-        // 由 BlockManager（有效架势命中）与 ParryManager（被弹反）钩子驱动触发。
-        this.lightningManager = new LightningManager(this, new LightningConfig(this), stanceManager, duelManager);
+        // 纸人（忍具系统 + 巴之雷消耗品）
+        this.paperDollManager = new PaperDollManager(this, new PaperDollConfig(this));
+        this.paperDollManager.enable();
+
+        // 巴之雷
+        this.lightningManager = new LightningManager(this, new LightningConfig(this), stanceManager, duelManager,
+                this.paperDollManager);
         this.lightningManager.enable();
 
         // 普通格挡 / 受击架势（独立模块）：无格挡命中扣受击方架势 Dactual×hit-multiplier；
@@ -195,6 +200,9 @@ public final class SekiroBedwar extends JavaPlugin {
         }
         if (this.lightningManager != null) {
             this.lightningManager.disable();
+        }
+        if (this.paperDollManager != null) {
+            this.paperDollManager.disable();
         }
         if (this.blockManager != null) {
             this.blockManager.disable();
@@ -299,5 +307,10 @@ public final class SekiroBedwar extends JavaPlugin {
     /** 获取巴之雷管理器。 */
     public LightningManager getLightningManager() {
         return this.lightningManager;
+    }
+
+    /** 获取纸人管理器。 */
+    public PaperDollManager getPaperDollManager() {
+        return this.paperDollManager;
     }
 }

@@ -388,6 +388,32 @@ lightning:
     level-2-currency: emerald
     level-2-amount: 1
 
+# ---------- 纸人（PaperDollManager，独立模块） ----------
+# 忍具系统的铺垫资源。
+paper-doll:
+  # 是否启用
+  enabled: true
+  # 物品图标 / 名称
+  material: PAPER
+  name: "纸人"
+  # 每个玩家背包最多持有的纸人数量（绑定玩家，不可丢弃/放入容器）
+  max-per-player: 20
+  # 巴之雷落雷每次消耗的纸人数量
+  lightning-cost: 4
+  # 抛投物绑定（有纸人时投掷优先消耗纸人，1 纸人抵一次投掷）
+  throw:
+    enabled: true
+    cost: 1
+  # 投掷物命中后传送（命中目标后 window-ms 内追加近战命中传送）
+  teleport:
+    enabled: true
+    window-ms: 2000
+    cost: 1
+  # 价格（按场上存活队伍数）
+  price-4-teams: {currency: iron, amount: 10}
+  price-3-teams: {currency: iron, amount: 30}
+  price-2-teams: {currency: gold, amount: 10}
+
 # ============ 四、示例与杂项 ============
 
 # ---------- 可选：预先配置的决斗岛屿白名单 ----------
