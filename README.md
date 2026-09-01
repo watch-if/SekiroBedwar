@@ -6,7 +6,7 @@
 
 将《只狼：影逝二度》(Sekiro: Shadows Die Twice) 的战斗机制带入 **ScreamingBedWars** 的 Minecraft Spigot 插件。它不修改 BedWars 本体，而是通过 BedWars API 与事件系统叠加实现一整套「架势—弹反—崩条—处决」的决斗玩法，让床战中的两人对决变成只狼式的攻防博弈。
 
-- **服务端版本**：Paper / Spigot `1.21.8`
+- **服务端版本**：Paper / Spigot `1.21.11`
 - **语言 / 运行时**：Java 21
 - **依赖**：ScreamingBedWars（软依赖，见下文）
 - **命令 / 权限**：无。所有机制全自动、事件驱动，无需任何指令或权限配置
@@ -33,6 +33,9 @@
 | **剑格挡** (`SwordBlockingManager`) | 1.21.8+ 给剑赋予盾牌格挡能力（blocks_attacks 组件，右键举盾、可被斧破盾） |
 | **巴之雷** (`LightningManager`) | 商店两级购买：三连击接跳斩落雷（L1）、忠诚三叉戟衔接（L2）、雷反；落雷消耗纸人 |
 | **纸人** (`PaperDollManager`) | 忍具系统铺垫资源：动态价格购买、背包绑定上限、抛投物消耗、投掷命中传送 |
+| **漂流纸人** (`DriftingPaperDollManager`) | 消耗品：血量>50%时右键 → 上限减半 + 得 5 纸人（可超上限） |
+| **盾牌弹反返还** (`DeflectManager`) | 主手持盾右键扣纸人 → 2s 免疫累计伤害 → 1.5s 内命中返还 |
+| **危攻击 / 识破** (`DangerManager`) | 矛+突进附魔疾跑攻击为「危」，不可弹反、格挡破盾；识破（下蹲170ms内接危）反击 |
 
 ---
 
@@ -70,7 +73,7 @@ W    = Σ (coeff × ln(1 + count))      // count 为背包中该资源数量
 ## 环境要求
 
 - Java **21**
-- Paper / Spigot **1.21.8**（兼容 1.21.8+）
+- Paper / Spigot **1.21.11**（兼容 1.21.11+）
 - **ScreamingBedWars** 插件（软依赖：存在时决斗/冻结/商店注入等功能生效，不存在时插件其余逻辑仍可加载）
 
 ---
@@ -113,7 +116,9 @@ mvn clean package
 | `sword-speed` | 剑攻速强化等级、价格 |
 | `sword-blocking` | 剑格挡 |
 | `lightning` | 巴之雷（雷击、三连击、三叉戟、雷反、商店价格） |
-| `paper-doll` | 纸人（价格、背包上限、抛投物绑定、命中传送、巴之雷消耗） |
+| `paper-doll` | 纸人（价格、背包上限、抛投物绑定、命中传送、巴之雷消耗、漂流纸人） |
+| `deflect` | 盾牌弹反返还（纸人消耗、弹反窗口、反击窗口） |
+| `danger` | 危攻击/识破（架势惩罚、识破窗口、破盾时长） |
 | `islands` | 可选的决斗岛屿白名单（留空 = 任意实心地面都允许决斗） |
 
 完整配置项与默认值见 `src/main/resources/duel.yml`。
@@ -127,15 +132,18 @@ src/main/java/org/alpha/sekiroBedwar/
 ├── SekiroBedwar.java        # 插件主类：模块装配与生命周期
 ├── block/                   # 普通格挡 / 受击架势
 ├── combat/                  # 战斗工具（武器面板伤害等）
+├── danger/                  # 危攻击 / 识破
+├── deflect/                 # 盾牌弹反返还
 ├── duel/                    # 决斗触发、生命周期、区域限制、结算、视觉
 ├── event/                   # DuelTriggeredEvent / DuelEndedEvent 自定义事件
 ├── freeze/                  # 物资刷新冻结、复活冻结、方块保护
 ├── lightning/               # 巴之雷（雷击 / 雷反）
 ├── paperdoll/               # 纸人（忍具系统铺垫资源）
+├── paperdoll/               # 纸人（忍具系统铺垫资源）
 ├── parry/                   # 完美弹反、延迟补偿、连续弹反封印
 ├── speed/                   # 剑攻速强化（商店注入）
 ├── stance/                  # 架势系统（状态、BossBar、经验条、恢复、崩条）
-└── swordblock/              # 剑格挡（1.21.2+）
+└── swordblock/              # 剑格挡（1.21.8+）
 ```
 
 ---

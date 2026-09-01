@@ -11,10 +11,13 @@ import org.bukkit.ChatColor;
 import org.bukkit.Material;
 import org.bukkit.enchantments.Enchantment;
 import org.bukkit.entity.Player;
+import org.bukkit.event.entity.PlayerDeathEvent;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.plugin.Plugin;
+import org.bukkit.scheduler.BukkitTask;
 import org.screamingsandals.bedwars.api.events.PlayerLeaveEvent;
+import org.screamingsandals.bedwars.api.events.PlayerRespawnedEvent;
 import org.screamingsandals.bedwars.api.events.StorePrePurchaseEvent;
 import org.screamingsandals.bedwars.api.types.server.ItemStackHolder;
 
@@ -22,6 +25,7 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
@@ -42,9 +46,10 @@ import java.util.UUID;
  * </ul>
  * 跳击触发「无论有没有被完美弹反都会触发」（空中命中即便被弹反也落雷）。</p>
  *
- * <p><b>雷反</b>：被雷击者若在 {@code reversal.window-ms} 内、处于<b>非落地</b>、攻击到雷击者
- * （同样无论被弹反与否）→ 恢复 {@code reversal.heal-hp} 血量 + 因雷击掉的架势，返还对方
- * 雷击伤害 × {@code reversal.return-multiplier} 的架势伤害；木剑时恢复 / 返还取 wood 变体。</p>
+ * <p><b>雷反</b>：落雷先<b>缓存</b>伤害与架势扣减（不立即结算）。被雷击者若在 {@code reversal.window-ms}
+ * 内、处于<b>非落地</b>、攻击到雷击者（同样无论被弹反与否）→ 走雷反：恢复 {@code reversal.heal-hp}
+ * 血量 + 返还对方雷击伤害 × {@code reversal.return-multiplier} 的架势伤害，并清除缓存（伤害不结算）；
+ * 窗口过期未反则缓存伤害 / 架势照常施加。木剑时恢复 / 返还取 wood 变体。</p>
  *
  * <p>雷击伤害 = {@code lightning-damage}（默认 5），雷击架势扣除 = 雷击伤害 ×
  * {@code lightning-stance-multiplier}（默认 4）。雷击用 {@code strikeLightningEffect} 视觉闪电 +
@@ -61,6 +66,14 @@ public final class LightningManager {
     private final DuelManager duelManager;
     private final PaperDollManager paperDollManager;
     private final LightningListener listener;
+
+    /** 雷击过期结算任务（每 tick 检查待结算雷击并施加缓存伤害）。 */
+    private BukkitTask expireTask;
+
+    /** L2 三叉戟丢失补偿任务。 */
+    private BukkitTask compensateTask;
+    /** L2 三叉戟「上次检测到缺失」时刻（供补偿计时）。 */
+    private final Map<UUID, Long> tridentMissingSince = new HashMap<>();
 
     /** 购买等级：0 未购 / 1 一级 / 2 二级。 */
     private final Map<UUID, Integer> levels = new HashMap<>();
@@ -95,6 +108,11 @@ public final class LightningManager {
             return;
         }
         plugin.getServer().getPluginManager().registerEvents(listener, plugin);
+        expireTask = plugin.getServer().getScheduler().runTaskTimer(plugin, this::expireStrikes, 1L, 1L);
+        PlayerRespawnedEvent.handle(plugin, this::handleRespawn);
+        if (config.tridentCompensateDelaySeconds() > 0) {
+            compensateTask = plugin.getServer().getScheduler().runTaskTimer(plugin, this::compensateTridents, 20L, 20L);
+        }
         if (config.shopEnabled()) {
             StorePrePurchaseEvent.handle(plugin, this::handlePrePurchase);
             PlayerLeaveEvent.handle(plugin, ev -> clear(ev.getPlayer().getUuid()));
@@ -105,8 +123,17 @@ public final class LightningManager {
                 + " 连击=" + config.comboRequiredHits() + "击");
     }
 
-    /** 插件禁用：清空状态。 */
+    /** 插件禁用：取消结算任务并清空状态。 */
     public void disable() {
+        if (expireTask != null) {
+            expireTask.cancel();
+            expireTask = null;
+        }
+        if (compensateTask != null) {
+            compensateTask.cancel();
+            compensateTask = null;
+        }
+        tridentMissingSince.clear();
         levels.clear();
         comboCount.clear();
         comboLastHit.clear();
@@ -127,6 +154,7 @@ public final class LightningManager {
         tridentHitUntil.remove(uuid);
         tridentJumpUntil.remove(uuid);
         strikes.remove(uuid);
+        tridentMissingSince.remove(uuid);
     }
 
     /**
@@ -176,6 +204,26 @@ public final class LightningManager {
         tridentHitUntil.put(thrower.getUniqueId(), now() + config.tridentHitWindowMs());
     }
 
+    /** 玩家是否已购买巴之雷（任一等级）。 */
+    public boolean hasLightning(UUID uuid) {
+        return levels.getOrDefault(uuid, 0) > 0;
+    }
+
+    /** 跳击窗口剩余毫秒（三连击窗口与三叉戟窗口取较大者，无则 0）。 */
+    public long getJumpWindowRemainingMillis(UUID uuid) {
+        long now = now();
+        long remaining = 0L;
+        Long combo = comboReadyUntil.get(uuid);
+        if (combo != null) {
+            remaining = Math.max(remaining, combo - now);
+        }
+        Long trident = tridentJumpUntil.get(uuid);
+        if (trident != null) {
+            remaining = Math.max(remaining, trident - now);
+        }
+        return Math.max(0L, remaining);
+    }
+
     // ============ 核心判定 ============
 
     /** 雷反：攻击方是被雷击者且非落地、170ms 内攻击雷击者。 */
@@ -202,11 +250,31 @@ public final class LightningManager {
         // 恢复 HP
         double max = attacker.getMaxHealth();
         attacker.setHealth(Math.min(max, attacker.getHealth() + heal));
-        // 恢复因雷击掉的架势
-        stanceManager.addStance(id, strike.stanceDeducted);
         // 返还对方架势伤害
         stanceManager.reduceStance(strike.striker, strike.damage * retMult);
         return true;
+    }
+
+    /** 周期结算：雷反窗口过期的待结算雷击 → 施加缓存伤害与架势，然后移除。 */
+    private void expireStrikes() {
+        if (strikes.isEmpty()) {
+            return;
+        }
+        long now = now();
+        for (Map.Entry<UUID, Strike> entry : new ArrayList<>(strikes.entrySet())) {
+            Strike strike = entry.getValue();
+            if (strike.until >= now) {
+                continue;
+            }
+            strikes.remove(entry.getKey());
+            Player victim = Bukkit.getPlayer(entry.getKey());
+            if (victim == null || !victim.isOnline() || victim.isDead()) {
+                continue;
+            }
+            victim.damage(strike.damage);
+            stanceManager.reduceStance(entry.getKey(), strike.stanceDeducted);
+            stanceManager.markActive(entry.getKey());
+        }
     }
 
     /** 是否处于跳击窗口（三连击窗口 或 三叉戟对目标窗口）。 */
@@ -258,7 +326,7 @@ public final class LightningManager {
         comboReadyUntil.remove(buyer);
     }
 
-    /** 落雷：视觉闪电 + 泛型伤害 + 架势扣除，并记录雷击（供雷反）。 */
+    /** 落雷：视觉闪电 + 缓存待结算伤害/架势，记录雷击（供雷反）；伤害与架势在雷反窗口过期后由 {@link #expireStrikes} 施加。 */
     private void triggerLightning(Player attacker, Player victim) {
         if (victim == null || !victim.isOnline() || victim.isDead()) {
             return;
@@ -269,8 +337,6 @@ public final class LightningManager {
         double dmg = config.lightningDamage();
         double stanceDeduct = dmg * config.lightningStanceMultiplier();
         victim.getWorld().strikeLightningEffect(victim.getLocation());
-        victim.damage(dmg);
-        stanceManager.reduceStance(victim.getUniqueId(), stanceDeduct);
         stanceManager.markActive(victim.getUniqueId());
         strikes.put(victim.getUniqueId(),
                 new Strike(attacker.getUniqueId(), now() + config.reversalWindowMs(), dmg, stanceDeduct,
@@ -342,6 +408,73 @@ public final class LightningManager {
         return trident;
     }
 
+    /** 死亡掉落：L2 拥有者不掉落三叉戟。 */
+    public void handlePlayerDeath(PlayerDeathEvent event) {
+        if (levels.getOrDefault(event.getEntity().getUniqueId(), 0) < 2) {
+            return;
+        }
+        event.getDrops().removeIf(this::isTrident);
+    }
+
+    /** 重生补发：L2 拥有者若无三叉戟则补发。 */
+    private void handleRespawn(PlayerRespawnedEvent ev) {
+        UUID uuid = ev.getPlayer().getUuid();
+        if (levels.getOrDefault(uuid, 0) < 2) {
+            return;
+        }
+        tridentMissingSince.remove(uuid);
+        Bukkit.getScheduler().runTaskLater(plugin, () -> {
+            Player player = Bukkit.getPlayer(uuid);
+            if (player != null && player.isOnline() && !hasTrident(player)) {
+                player.getInventory().addItem(buildTrident());
+            }
+        }, 1L);
+    }
+
+    /** 周期补偿：L2 拥有者背包长时间无三叉戟 → 补发。 */
+    private void compensateTridents() {
+        long now = System.currentTimeMillis();
+        for (UUID uuid : new ArrayList<>(levels.keySet())) {
+            if (levels.getOrDefault(uuid, 0) < 2) {
+                continue;
+            }
+            Player player = Bukkit.getPlayer(uuid);
+            if (player == null || !player.isOnline()) {
+                continue;
+            }
+            if (hasTrident(player)) {
+                tridentMissingSince.remove(uuid);
+                continue;
+            }
+            Long since = tridentMissingSince.get(uuid);
+            if (since == null) {
+                tridentMissingSince.put(uuid, now);
+                continue;
+            }
+            if (now - since >= config.tridentCompensateDelaySeconds() * 1000L) {
+                player.getInventory().addItem(buildTrident());
+                tridentMissingSince.remove(uuid);
+            }
+        }
+    }
+
+    private boolean hasTrident(Player player) {
+        for (ItemStack item : player.getInventory().getContents()) {
+            if (isTrident(item)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean isTrident(ItemStack item) {
+        if (item == null || item.getType() != Material.TRIDENT || !item.hasItemMeta()) {
+            return false;
+        }
+        String name = item.getItemMeta().getDisplayName();
+        return name != null && name.contains("巴之雷");
+    }
+
     /** 幂等注入：把巴之雷两个购买项<b>并入剑攻速类别</b>（sword-speed 块内，END 之前）。 */
     private void injectShop() {
         Plugin bw = Bukkit.getPluginManager().getPlugin("ScreamingBedWars");
@@ -393,22 +526,22 @@ public final class LightningManager {
         StringBuilder sb = new StringBuilder();
         sb.append(MARKER_START).append('\n');
         // L1
-        sb.append("      - price: ").append(config.level1Amount()).append(" of ")
+        sb.append("  - price: ").append(config.level1Amount()).append(" of ")
                 .append(config.level1Currency()).append('\n');
-        sb.append("        stack:\n");
-        appendMap(sb, 10, "type", config.categoryMaterial().name().toLowerCase());
-        appendMap(sb, 10, "display-name", config.categoryName() + " Lv.1");
-        sb.append("          lore:\n");
-        sb.append("            - \"").append(yamlEscape("三连击（≤0.7s）后 1s 内跳斩命中即落雷")).append("\"\n");
+        sb.append("    stack:\n");
+        appendMap(sb, 6, "type", config.categoryMaterial().name().toLowerCase());
+        appendMap(sb, 6, "display-name", config.categoryName() + " Lv.1");
+        sb.append("      lore:\n");
+        sb.append("        - \"").append(yamlEscape("三连击（≤0.7s）后 1s 内跳斩命中即落雷")).append("\"\n");
         // L2
-        sb.append("      - price: ").append(config.level2Amount()).append(" of ")
+        sb.append("  - price: ").append(config.level2Amount()).append(" of ")
                 .append(config.level2Currency()).append('\n');
-        sb.append("        stack:\n");
-        appendMap(sb, 10, "type", config.categoryMaterial().name().toLowerCase());
-        appendMap(sb, 10, "display-name", config.categoryName() + " Lv.2");
-        sb.append("          lore:\n");
-        sb.append("            - \"").append(yamlEscape("附赠忠诚三叉戟")).append("\"\n");
-        sb.append("            - \"").append(yamlEscape("三叉戟远程命中可衔接落雷")).append("\"\n");
+        sb.append("    stack:\n");
+        appendMap(sb, 6, "type", config.categoryMaterial().name().toLowerCase());
+        appendMap(sb, 6, "display-name", config.categoryName() + " Lv.2");
+        sb.append("      lore:\n");
+        sb.append("        - \"").append(yamlEscape("附赠忠诚三叉戟")).append("\"\n");
+        sb.append("        - \"").append(yamlEscape("三叉戟远程命中可衔接落雷")).append("\"\n");
         sb.append(MARKER_END).append('\n');
         return sb.toString();
     }

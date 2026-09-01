@@ -2,6 +2,7 @@ package org.alpha.sekiroBedwar.block;
 
 import org.alpha.sekiroBedwar.SekiroBedwar;
 import org.alpha.sekiroBedwar.combat.CombatUtils;
+import org.alpha.sekiroBedwar.danger.DangerManager;
 import org.alpha.sekiroBedwar.duel.Duel;
 import org.alpha.sekiroBedwar.duel.DuelManager;
 import org.alpha.sekiroBedwar.duel.DuelState;
@@ -51,17 +52,20 @@ public final class BlockManager {
     private final DuelManager duelManager;
     private final StanceBreakManager stanceBreakManager;
     private final LightningManager lightningManager;
+    private final DangerManager dangerManager;
     private final BlockListener listener;
 
     public BlockManager(SekiroBedwar plugin, BlockConfig config,
                         StanceManager stanceManager, DuelManager duelManager,
-                        StanceBreakManager stanceBreakManager, LightningManager lightningManager) {
+                        StanceBreakManager stanceBreakManager, LightningManager lightningManager,
+                        DangerManager dangerManager) {
         this.plugin = plugin;
         this.config = config;
         this.stanceManager = stanceManager;
         this.duelManager = duelManager;
         this.stanceBreakManager = stanceBreakManager;
         this.lightningManager = lightningManager;
+        this.dangerManager = dangerManager;
         this.listener = new BlockListener(this);
     }
 
@@ -114,17 +118,22 @@ public final class BlockManager {
         stanceManager.markActive(attacker.getUniqueId());
 
         if (victim.isBlocking()) {
-            // 普通格挡（ΔS格挡）：不完全免架势——防守方架势 -= Dbase（武器面板伤害）× defender-multiplier。
-            // 攻击方不扣架势。
-            // 破盾：攻击方主手为配置的破盾武器（斧）→ 更高倍率扣减 + 短暂禁用防守方格挡。
-            double db = CombatUtils.baseDamage(attacker, event);
-            if (config.shieldBreakEnabled() && isShieldBreaker(attacker)) {
-                stanceManager.disableBlocking(victim.getUniqueId(), config.shieldBreakDisableBlockingSeconds());
-                int ticks = Math.max(1, (int) Math.ceil(config.shieldBreakDisableBlockingSeconds() * 20.0));
-                victim.setCooldown(Material.SHIELD, ticks);
-                stanceManager.reduceStance(victim.getUniqueId(), db * config.shieldBreakStanceMultiplier());
+            if (dangerManager.isDangerAttack(event)) {
+                // 危格挡：破盾 + 防守方扣 15 架势（不可完美弹反，直接受破盾惩罚）。
+                dangerManager.applyShieldBreak(victim);
             } else {
-                stanceManager.reduceStance(victim.getUniqueId(), db * config.defenderMultiplier());
+                // 普通格挡（ΔS格挡）：不完全免架势——防守方架势 -= Dbase（武器面板伤害）× defender-multiplier。
+                // 攻击方不扣架势。
+                // 破盾：攻击方主手为配置的破盾武器（斧）→ 更高倍率扣减 + 短暂禁用防守方格挡。
+                double db = CombatUtils.baseDamage(attacker, event);
+                if (config.shieldBreakEnabled() && isShieldBreaker(attacker)) {
+                    stanceManager.disableBlocking(victim.getUniqueId(), config.shieldBreakDisableBlockingSeconds());
+                    int ticks = Math.max(1, (int) Math.ceil(config.shieldBreakDisableBlockingSeconds() * 20.0));
+                    victim.setCooldown(Material.SHIELD, ticks);
+                    stanceManager.reduceStance(victim.getUniqueId(), db * config.shieldBreakStanceMultiplier());
+                } else {
+                    stanceManager.reduceStance(victim.getUniqueId(), db * config.defenderMultiplier());
+                }
             }
         } else {
             // 无格挡命中（ΔS肉）：受击方架势 -= Dactual（实机血量伤害）× hit-multiplier

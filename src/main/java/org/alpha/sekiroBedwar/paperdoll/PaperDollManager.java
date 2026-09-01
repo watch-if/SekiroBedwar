@@ -11,6 +11,7 @@ import org.bukkit.entity.Player;
 import org.bukkit.entity.Projectile;
 import org.bukkit.entity.Trident;
 import org.bukkit.entity.WindCharge;
+import org.bukkit.event.entity.PlayerDeathEvent;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.persistence.PersistentDataType;
@@ -282,6 +283,24 @@ public final class PaperDollManager {
         return item;
     }
 
+    /** 发放 n 个绑定纸人（跳过购买上限校验，供漂流纸人奖励可超上限）。 */
+    public void givePaperDolls(Player player, int n) {
+        if (player == null || n <= 0) {
+            return;
+        }
+        ItemStack stack = new ItemStack(config.material(), n);
+        ItemMeta meta = stack.getItemMeta();
+        meta.setDisplayName("§f" + config.name());
+        meta.getPersistentDataContainer().set(ownerKey, PersistentDataType.STRING, player.getUniqueId().toString());
+        stack.setItemMeta(meta);
+        player.getInventory().addItem(stack);
+    }
+
+    /** 死亡掉落：从掉落列表移除纸人（不掉落地面）。 */
+    public void handlePlayerDeath(PlayerDeathEvent event) {
+        event.getDrops().removeIf(this::isPaperDoll);
+    }
+
     private static Material currencyMaterial(String currency) {
         switch (currency.toLowerCase()) {
             case "iron":
@@ -341,13 +360,13 @@ public final class PaperDollManager {
     private String buildBlock() {
         StringBuilder sb = new StringBuilder();
         sb.append(MARKER_START).append('\n');
-        sb.append("      - price: 1 of iron\n");
-        sb.append("        stack:\n");
-        sb.append("          type: ").append(config.material().name().toLowerCase()).append('\n');
-        sb.append("          display-name: \"").append(yamlEscape(config.name())).append("\"\n");
-        sb.append("          lore:\n");
-        sb.append("            - \"").append(yamlEscape("忍具的消耗品")).append("\"\n");
-        sb.append("            - \"").append(yamlEscape("价格随存活队伍数变化")).append("\"\n");
+        sb.append("  - price: 1 of iron\n");
+        sb.append("    stack:\n");
+        sb.append("      type: ").append(config.material().name().toLowerCase()).append('\n');
+        sb.append("      display-name: \"").append(yamlEscape(config.name())).append("\"\n");
+        sb.append("      lore:\n");
+        sb.append("        - \"").append(yamlEscape("忍具的消耗品")).append("\"\n");
+        sb.append("        - \"").append(yamlEscape("价格随存活队伍数变化")).append("\"\n");
         sb.append(MARKER_END).append('\n');
         return sb.toString();
     }

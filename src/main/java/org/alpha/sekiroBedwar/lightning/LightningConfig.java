@@ -34,6 +34,7 @@ public final class LightningConfig {
 
     private long tridentHitWindowMs;
     private long tridentJumpWindowMs;
+    private int tridentCompensateDelaySeconds;
 
     private long reversalWindowMs;
     private double reversalHealHp;
@@ -72,6 +73,7 @@ public final class LightningConfig {
 
         this.tridentHitWindowMs = Math.max(0L, yaml.getLong("lightning.trident.hit-window-ms", 2000L));
         this.tridentJumpWindowMs = Math.max(0L, yaml.getLong("lightning.trident.jump-window-ms", 1000L));
+        this.tridentCompensateDelaySeconds = Math.max(0, yaml.getInt("lightning.trident.compensate-delay-seconds", 10));
 
         this.reversalWindowMs = Math.max(0L, yaml.getLong("lightning.reversal.window-ms", 170L));
         this.reversalHealHp = Math.max(0.0, yaml.getDouble("lightning.reversal.heal-hp", 2.5));
@@ -127,6 +129,10 @@ public final class LightningConfig {
 
     public long tridentJumpWindowMs() {
         return tridentJumpWindowMs;
+    }
+
+    public int tridentCompensateDelaySeconds() {
+        return tridentCompensateDelaySeconds;
     }
 
     public long reversalWindowMs() {

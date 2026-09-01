@@ -2,7 +2,7 @@ name: SekiroBedwar
 version: '1.0.0'
 
 main: org.alpha.sekiroBedwar.SekiroBedwar
-api-version: '1.21.8'
+api-version: '1.21.11'
 
 # 仅当 ScreamingBedWars 存在时加载；不存在时本插件其余逻辑仍可运行
 softdepend: [ScreamingBedWars]

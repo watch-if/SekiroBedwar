@@ -25,6 +25,17 @@ public final class PaperDollConfig {
     private long teleportWindowMs;
     private int teleportCost;
 
+    // 漂流纸人（新增消耗品）
+    private boolean driftingEnabled;
+    private Material driftingMaterial;
+    private String driftingName;
+    private String driftingPriceCurrency;
+    private int driftingPriceAmount;
+    private int driftingMaxHold;
+    private double driftingHpThreshold;
+    private double driftingHpReduction;
+    private int driftingPaperDollsGranted;
+
     public PaperDollConfig(SekiroBedwar plugin) {
         this.plugin = plugin;
         reload();
@@ -52,6 +63,16 @@ public final class PaperDollConfig {
         this.teleportEnabled = yaml.getBoolean("paper-doll.teleport.enabled", true);
         this.teleportWindowMs = Math.max(0L, yaml.getLong("paper-doll.teleport.window-ms", 2000L));
         this.teleportCost = Math.max(1, yaml.getInt("paper-doll.teleport.cost", 1));
+
+        this.driftingEnabled = yaml.getBoolean("paper-doll.drifting.enabled", true);
+        this.driftingMaterial = parseMaterial(yaml.getString("paper-doll.drifting.material", "ENCHANTED_BOOK"));
+        this.driftingName = yaml.getString("paper-doll.drifting.name", "漂流纸人");
+        this.driftingPriceCurrency = yaml.getString("paper-doll.drifting.price-currency", "iron");
+        this.driftingPriceAmount = Math.max(1, yaml.getInt("paper-doll.drifting.price-amount", 30));
+        this.driftingMaxHold = Math.max(1, yaml.getInt("paper-doll.drifting.max-hold", 3));
+        this.driftingHpThreshold = clamp01(yaml.getDouble("paper-doll.drifting.hp-threshold", 0.5));
+        this.driftingHpReduction = clamp01(yaml.getDouble("paper-doll.drifting.hp-reduction", 0.5));
+        this.driftingPaperDollsGranted = Math.max(1, yaml.getInt("paper-doll.drifting.paper-dolls-granted", 5));
     }
 
     private PaperPrice parsePrice(YamlConfiguration yaml, String key, String defCurrency, int defAmount) {
@@ -132,6 +153,46 @@ public final class PaperDollConfig {
 
     public int teleportCost() {
         return teleportCost;
+    }
+
+    public boolean driftingEnabled() {
+        return driftingEnabled;
+    }
+
+    public Material driftingMaterial() {
+        return driftingMaterial;
+    }
+
+    public String driftingName() {
+        return driftingName;
+    }
+
+    public String driftingPriceCurrency() {
+        return driftingPriceCurrency;
+    }
+
+    public int driftingPriceAmount() {
+        return driftingPriceAmount;
+    }
+
+    public int driftingMaxHold() {
+        return driftingMaxHold;
+    }
+
+    public double driftingHpThreshold() {
+        return driftingHpThreshold;
+    }
+
+    public double driftingHpReduction() {
+        return driftingHpReduction;
+    }
+
+    public int driftingPaperDollsGranted() {
+        return driftingPaperDollsGranted;
+    }
+
+    private static double clamp01(double v) {
+        return Math.max(0.0, Math.min(1.0, v));
     }
 
     public static final class PaperPrice {

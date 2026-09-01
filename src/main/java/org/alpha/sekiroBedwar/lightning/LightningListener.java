@@ -5,6 +5,7 @@ import org.bukkit.entity.Trident;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
+import org.bukkit.event.entity.PlayerDeathEvent;
 import org.bukkit.event.entity.ProjectileHitEvent;
 
 /**
@@ -32,5 +33,10 @@ public final class LightningListener implements Listener {
             return;
         }
         manager.handleTridentHit(shooter, victim);
+    }
+
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void onPlayerDeath(PlayerDeathEvent event) {
+        manager.handlePlayerDeath(event);
     }
 }

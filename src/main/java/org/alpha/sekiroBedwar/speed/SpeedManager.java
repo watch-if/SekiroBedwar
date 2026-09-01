@@ -271,7 +271,7 @@ public final class SpeedManager {
             String content = new String(Files.readAllBytes(shopFile.toPath()), StandardCharsets.UTF_8);
             content = replaceBlock(content);
             Files.write(shopFile.toPath(), content.getBytes(StandardCharsets.UTF_8));
-            plugin.getLogger().info("已注入剑攻速强化商店类别: " + shopFile.getAbsolutePath());
+            plugin.getLogger().info("已注入剑攻速强化商店物品（第 2 页）: " + shopFile.getAbsolutePath());
         } catch (IOException ex) {
             plugin.getLogger().warning("剑攻速强化商店注入失败: " + ex.getMessage());
         }
@@ -295,28 +295,28 @@ public final class SpeedManager {
     }
 
     /**
-     * 由当前配置生成商店类别 YAML 块（对齐 root shop.yml 的 data: 列表：类别项
-     * {@code   - stack:} 在 2 空格，{@code stack:} 子键在 6 空格，{@code items:} 在 4 空格）。
+     * 由当前配置生成商店顶层购买项 YAML 块（对齐 root shop.yml 的 {@code data:} 列表）：
+     * 每个等级一条 {@code   - price:} 顶层项（2 空格），{@code stack:} 子键在 4 空格、
+     * {@code type/display-name/lore} 在 6 空格；首项带 {@code pagebreak: before} 把整组
+     * 推到商店第 2 页（page forward 进入），与纸人 / 巴之雷顶层项同页。
      */
     private String buildShopBlock() {
         StringBuilder sb = new StringBuilder();
         sb.append(MARKER_START).append('\n');
-        sb.append("  - stack:\n");
-        appendMap(sb, 6, "type", config.categoryMaterial().name().toLowerCase());
-        appendMap(sb, 6, "display-name", config.categoryName());
-        appendLore(sb, 6, config.categoryLore());
-        sb.append("    items:\n");
         for (int level = 1; level <= config.maxLevel(); level++) {
             SpeedConfig.SpeedPrice price = config.price(level);
-            sb.append("      - price: ").append(price.amount()).append(" of ")
+            sb.append("  - price: ").append(price.amount()).append(" of ")
                     .append(price.currency()).append('\n');
-            sb.append("        stack:\n");
-            appendMap(sb, 10, "type", config.categoryMaterial().name().toLowerCase());
-            appendMap(sb, 10, "display-name", markerDisplayName(level));
-            sb.append("          lore:\n");
-            sb.append("            - \"").append(yamlEscape("攻击冷却缩短至 " + cooldownTicks(level) + " tick"))
+            if (level == 1) {
+                sb.append("    pagebreak: before\n");
+            }
+            sb.append("    stack:\n");
+            appendMap(sb, 6, "type", config.categoryMaterial().name().toLowerCase());
+            appendMap(sb, 6, "display-name", markerDisplayName(level));
+            sb.append("      lore:\n");
+            sb.append("        - \"").append(yamlEscape("攻击冷却缩短至 " + cooldownTicks(level) + " tick"))
                     .append("\"\n");
-            sb.append("            - \"").append(yamlEscape("本局永久生效，死亡后保留")).append("\"\n");
+            sb.append("        - \"").append(yamlEscape("本局永久生效，死亡后保留")).append("\"\n");
         }
         sb.append(MARKER_END).append('\n');
         return sb.toString();

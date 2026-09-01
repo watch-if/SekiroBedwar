@@ -320,10 +320,10 @@ sword-speed:
   # 最大强化等级（也决定商店生成的物品数量；不能超过下方 prices 条数，多的自动截断）
   max-level: 3
   # 每级提升的攻击速度（AttributeModifier ADD_NUMBER）
-  per-level-attack-speed: 0.3
+  per-level-attack-speed: 0.8
   # 总攻速上限：拿剑时的总攻速（melee-base-attack-speed + 强化修正）不得超过该值。
-  # 默认 3.0 → 强化修正上限 = 3.0 - 1.6 = 1.4；默认 3 级共 +0.9 → 持剑总攻速 2.5（冷却 8 tick）
-  max-attack-speed: 3.0
+  # 默认 4.0 → 强化修正上限 = 4.0 - 1.6 = 2.4；默认 3 级共 +2.4 → 持剑总攻速 4.0（冷却 5 tick）
+  max-attack-speed: 4.0
   # 近战基础攻速（默认=剑 1.6；斧为 1.0），用于计算强化上限
   melee-base-attack-speed: 1.6
   # 商店类别图标（material 也用作品 marker 物品类型，需非堆叠以阻止 shift 连点多扣）
@@ -335,11 +335,11 @@ sword-speed:
   # 每个等级的购买价格（条数 = 有效最大等级；currency 用 BedWars 资源名 bronze/iron/gold/diamond/emerald）
   prices:
     - currency: iron
-      amount: 5
+      amount: 15
     - currency: iron
-      amount: 10
+      amount: 30
     - currency: gold
-      amount: 5
+      amount: 10
 
 # ---------- 剑格挡（SwordBlockingManager，独立模块） ----------
 # 本模块检测到该组件可用时，给剑赋予盾牌格挡能力：剑右键举盾格挡、可被斧头破盾、右键禁用。
@@ -358,24 +358,26 @@ lightning:
   # 是否启用
   enabled: true
   # 雷击伤害（×4/×3.5/×3 乘数的基准）
-  lightning-damage: 3.0
+  lightning-damage: 4.0
   # 雷击架势扣除倍率
   lightning-stance-multiplier: 4.0
   # 三连击（L1）：连续 required-hits 次有效架势命中（间隔 ≤ max-interval-ms）后，
   # 开启 jump-window-ms 跳击窗口；窗口内空中攻击命中即落雷
   combo:
     required-hits: 3
-    max-interval-ms: 700
-    jump-window-ms: 3000
+    max-interval-ms: 1500
+    jump-window-ms: 5000
   # 三叉戟衔接（L2）：远程命中后 hit-window-ms 内目标被有效架势命中 → 开启 jump-window-ms 跳击窗口
   trident:
     hit-window-ms: 2000
-    jump-window-ms: 3000
+    jump-window-ms: 5000
+    # L2 忠诚Ⅲ三叉戟背包长时间丢失后自动补偿的延迟（秒）
+    compensate-delay-seconds: 10
   # 雷反：被雷击者非落地且 window-ms 内攻击雷击者 → 恢复血量+架势、返还对方架势
   reversal:
     window-ms: 170
-    heal-hp: 2.5
-    heal-hp-wood: 3.0
+    heal-hp: 3.5
+    heal-hp-wood: 4.0
     return-multiplier: 3.5
     return-multiplier-wood: 3.0
   # 商店（L1 diamond / L2 emerald + 忠诚三叉戟）
@@ -413,6 +415,38 @@ paper-doll:
   price-4-teams: {currency: iron, amount: 10}
   price-3-teams: {currency: iron, amount: 30}
   price-2-teams: {currency: gold, amount: 10}
+  # 漂流纸人（消耗品）：固定价购买、实时最多持 3 个；血量 > 50% 上限时右键使用 →
+  # 血量上限砍半 + 获得 5 个纸人（可超 20 上限）；减血效果除死亡外不恢复。
+  drifting:
+    enabled: true
+    material: ENCHANTED_BOOK
+    name: "漂流纸人"
+    price-currency: iron
+    price-amount: 30
+    max-hold: 3
+    hp-threshold: 0.5
+    hp-reduction: 0.5
+    paper-dolls-granted: 5
+
+# ---------- 盾牌弹反返还（DeflectManager，独立新机制） ----------
+# 主手持盾右键格挡 → 扣 paper-doll-cost 纸人 → 进入 deflect-window-ms 弹反窗口
+# （期间免疫并累计所有受到伤害）→ 之后 counter-window-ms 反击窗口内有效近战命中对方
+# → 把累计伤害返还。仅在 ACTIVE 决斗内生效。
+deflect:
+  enabled: true
+  paper-doll-cost: 2
+  deflect-window-ms: 2000
+  counter-window-ms: 1500
+
+# ---------- 危攻击 / 识破（DangerManager，独立新机制） ----------
+# 主手持矛（任一等级）+ 突进（LUNGE）附魔 + 疾跑攻击 = 危攻击：
+# 不可被完美弹反；格挡 → 破盾 + 扣防守方架势；识破（下蹲后 mikiri-window-ms 内接危）
+# → 免疫危伤害 + 反扣攻击方架势。
+danger:
+  enabled: true
+  stance-penalty: 15.0
+  mikiri-window-ms: 170
+  shield-break-seconds: 1.0
 
 # ============ 四、示例与杂项 ============
 

@@ -2,6 +2,7 @@ package org.alpha.sekiroBedwar.parry;
 
 import org.alpha.sekiroBedwar.SekiroBedwar;
 import org.alpha.sekiroBedwar.combat.CombatUtils;
+import org.alpha.sekiroBedwar.danger.DangerManager;
 import org.alpha.sekiroBedwar.duel.Duel;
 import org.alpha.sekiroBedwar.duel.DuelManager;
 import org.alpha.sekiroBedwar.duel.DuelState;
@@ -61,12 +62,13 @@ public final class ParryManager {
     private final StanceBreakManager stanceBreakManager;
     private final ParrySealManager sealManager;
     private final LightningManager lightningManager;
+    private final DangerManager dangerManager;
     private final ParryListener listener;
 
     public ParryManager(SekiroBedwar plugin, ParryConfig config,
                         StanceManager stanceManager, DuelManager duelManager,
                         StanceBreakManager stanceBreakManager, ParrySealManager sealManager,
-                        LightningManager lightningManager) {
+                        LightningManager lightningManager, DangerManager dangerManager) {
         this.plugin = plugin;
         this.config = config;
         this.latency = new LatencyCompensationManager(config);
@@ -76,6 +78,7 @@ public final class ParryManager {
         this.stanceBreakManager = stanceBreakManager;
         this.sealManager = sealManager;
         this.lightningManager = lightningManager;
+        this.dangerManager = dangerManager;
         this.listener = new ParryListener(this, window, latency);
     }
 
@@ -128,6 +131,11 @@ public final class ParryManager {
         // block 模块 NORMAL + ignoreCancelled 自然跳过已取消的命中。
         if (sealManager.isSealed(attacker.getUniqueId())) {
             event.setCancelled(true);
+            return;
+        }
+        // 危攻击（矛 + 突进附魔 + 疾跑）不可被完美弹反：打断连续被弹反计数，直接交 block 模块处理。
+        if (dangerManager.isDangerAttack(event)) {
+            sealManager.onHitLanded(attacker);
             return;
         }
         // 完美弹反仅限近战直接命中；弓箭/投射物不参与弹反（由 block 模块按普通格挡/无格挡处理）。

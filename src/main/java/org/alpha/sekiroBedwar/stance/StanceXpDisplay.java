@@ -1,6 +1,7 @@
 package org.alpha.sekiroBedwar.stance;
 
 import org.alpha.sekiroBedwar.SekiroBedwar;
+import org.alpha.sekiroBedwar.lightning.LightningManager;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
 import org.bukkit.scheduler.BukkitTask;
@@ -14,7 +15,8 @@ import java.util.UUID;
  * 决斗期间用经验条（快捷栏上方绿条）显示<b>自己</b>的架势（独立模块）。
  *
  * <p>与 {@link StanceBossBarDisplay}（互显对手架势）互补：每位决斗玩家自己的经验条
- * 填充 = 自己架势剩余比例（0.0~1.0），等级数字隐藏（{@code setLevel(0)}），由
+ * 填充 = 自己架势剩余比例（0.0~1.0），等级数字通常隐藏（{@code setLevel(0)}）；若玩家
+ * 持有巴之雷且跳击窗口开启，则等级数字改为倒数剩余秒数。由
  * {@code stance.xp-bar.refresh-ticks} 间隔的共享定时任务实时刷新。</p>
  *
  * <p><b>经验值保护</b>：进入决斗时保存玩家原本的等级 / 经验条进度，决斗结束
@@ -115,14 +117,22 @@ public final class StanceXpDisplay {
                 Math.max(1, config.xpBarRefreshTicks()));
     }
 
-    /** 刷新所有活跃玩家的经验条：填充 = 自己架势剩余比例，隐藏等级数字。 */
+    /** 刷新所有活跃玩家的经验条：填充 = 自己架势剩余比例；持有巴之雷且跳击窗口开启时用等级数字倒数剩余秒。 */
     private void refresh() {
+        LightningManager lightning = plugin.getLightningManager();
         for (UUID uuid : new ArrayList<>(active.keySet())) {
             Player player = Bukkit.getPlayer(uuid);
             if (player == null || !player.isOnline()) {
                 continue;
             }
-            player.setLevel(0);
+            int level = 0;
+            if (lightning != null && lightning.hasLightning(uuid)) {
+                long remainingMs = lightning.getJumpWindowRemainingMillis(uuid);
+                if (remainingMs > 0) {
+                    level = (int) Math.ceil(remainingMs / 1000.0);
+                }
+            }
+            player.setLevel(level);
             player.setExp((float) clamp01(stanceManager.getPercentage(uuid)));
         }
     }

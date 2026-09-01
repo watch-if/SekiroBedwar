@@ -2,6 +2,10 @@ package org.alpha.sekiroBedwar;
 
 import org.alpha.sekiroBedwar.block.BlockConfig;
 import org.alpha.sekiroBedwar.block.BlockManager;
+import org.alpha.sekiroBedwar.deflect.DeflectConfig;
+import org.alpha.sekiroBedwar.deflect.DeflectManager;
+import org.alpha.sekiroBedwar.danger.DangerConfig;
+import org.alpha.sekiroBedwar.danger.DangerManager;
 import org.alpha.sekiroBedwar.duel.DuelAreaGuard;
 import org.alpha.sekiroBedwar.freeze.DuelBlockProtectionListener;
 import org.alpha.sekiroBedwar.freeze.FreezeConfig;
@@ -9,6 +13,7 @@ import org.alpha.sekiroBedwar.freeze.ResourceFreezeManager;
 import org.alpha.sekiroBedwar.freeze.RespawnFreezeManager;
 import org.alpha.sekiroBedwar.lightning.LightningConfig;
 import org.alpha.sekiroBedwar.lightning.LightningManager;
+import org.alpha.sekiroBedwar.paperdoll.DriftingPaperDollManager;
 import org.alpha.sekiroBedwar.paperdoll.PaperDollConfig;
 import org.alpha.sekiroBedwar.paperdoll.PaperDollManager;
 import org.alpha.sekiroBedwar.duel.DuelConfig;
@@ -84,6 +89,9 @@ public final class SekiroBedwar extends JavaPlugin {
     private SwordBlockingManager swordBlockingManager;
     private LightningManager lightningManager;
     private PaperDollManager paperDollManager;
+    private DriftingPaperDollManager driftingPaperDollManager;
+    private DeflectManager deflectManager;
+    private DangerManager dangerManager;
 
     @Override
     public void onEnable() {
@@ -125,13 +133,25 @@ public final class SekiroBedwar extends JavaPlugin {
         this.stanceBreakManager = new StanceBreakManager(this, stanceConfig, stanceManager);
         this.stanceBreakManager.enable();
 
+        // 危攻击 / 识破（独立模块）：主手持矛（突进附魔）疾跑攻击 = 危，不可弹反，
+        // 格挡破盾 + 扣架势，识破（下蹲 170ms 内接危）反击
+        this.dangerManager = new DangerManager(this, new DangerConfig(this), stanceManager, duelManager);
+        this.dangerManager.enable();
+
         // 剑攻速强化
         this.speedManager = new SpeedManager(this, new SpeedConfig(this));
         this.speedManager.enable();
 
-        // 纸人（忍具系统 + 巴之雷消耗品）
-        this.paperDollManager = new PaperDollManager(this, new PaperDollConfig(this));
+        // 纸人（忍具系统 + 巴之雷消耗品）+ 漂流纸人
+        PaperDollConfig paperDollConfig = new PaperDollConfig(this);
+        this.paperDollManager = new PaperDollManager(this, paperDollConfig);
         this.paperDollManager.enable();
+        this.driftingPaperDollManager = new DriftingPaperDollManager(this, paperDollConfig, this.paperDollManager);
+        this.driftingPaperDollManager.enable();
+
+        // 盾牌弹反返还（独立新机制）：主手持盾右键扣纸人 → 2s 免疫累计 → 1.5s 内命中返还
+        this.deflectManager = new DeflectManager(this, new DeflectConfig(this), this.paperDollManager, this.duelManager);
+        this.deflectManager.enable();
 
         // 巴之雷
         this.lightningManager = new LightningManager(this, new LightningConfig(this), stanceManager, duelManager,
@@ -142,7 +162,7 @@ public final class SekiroBedwar extends JavaPlugin {
         // 盾牌普通格挡不完全免架势——防守方扣 Dbase×defender-multiplier（攻击方不扣）。
         // 只处理 ACTIVE 决斗内对方攻击（含弓箭/投射物），不破坏原版战斗。
         this.blockManager = new BlockManager(this, new BlockConfig(this), stanceManager, duelManager,
-                stanceBreakManager, this.lightningManager);
+                stanceBreakManager, this.lightningManager, this.dangerManager);
         this.blockManager.enable();
 
         // 完美弹反系统（独立模块，与普通格挡分离）：只判完美弹反——命中窗口则完整弹开攻击并重创
@@ -153,7 +173,7 @@ public final class SekiroBedwar extends JavaPlugin {
         this.parrySealManager = new ParrySealManager(this, parryConfig);
         this.parrySealManager.enable();
         this.parryManager = new ParryManager(this, parryConfig, stanceManager, duelManager,
-                stanceBreakManager, this.parrySealManager, this.lightningManager);
+                stanceBreakManager, this.parrySealManager, this.lightningManager, this.dangerManager);
         this.parryManager.enable();
 
         // 决斗冻结系统（独立模块）：物资刷新冻结（白圈内刷新点暂停实际生成，计时照常，
@@ -200,6 +220,15 @@ public final class SekiroBedwar extends JavaPlugin {
         }
         if (this.lightningManager != null) {
             this.lightningManager.disable();
+        }
+        if (this.dangerManager != null) {
+            this.dangerManager.disable();
+        }
+        if (this.deflectManager != null) {
+            this.deflectManager.disable();
+        }
+        if (this.driftingPaperDollManager != null) {
+            this.driftingPaperDollManager.disable();
         }
         if (this.paperDollManager != null) {
             this.paperDollManager.disable();
@@ -312,5 +341,20 @@ public final class SekiroBedwar extends JavaPlugin {
     /** 获取纸人管理器。 */
     public PaperDollManager getPaperDollManager() {
         return this.paperDollManager;
+    }
+
+    /** 获取漂流纸人管理器。 */
+    public DriftingPaperDollManager getDriftingPaperDollManager() {
+        return this.driftingPaperDollManager;
+    }
+
+    /** 获取盾牌弹反返还管理器。 */
+    public DeflectManager getDeflectManager() {
+        return this.deflectManager;
+    }
+
+    /** 获取危攻击 / 识破管理器。 */
+    public DangerManager getDangerManager() {
+        return this.dangerManager;
     }
 }
