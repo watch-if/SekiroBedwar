@@ -183,6 +183,30 @@ public final class PaperDollManager {
         attacker.teleport(findSafeLocation(victim));
     }
 
+    /** 左键（挥臂）触发传送：投掷物命中标记目标且在窗口内 → 传送并消耗纸人（不需近战打中）。 */
+    public void handleSwing(Player attacker) {
+        if (!config.teleportEnabled() || attacker == null) {
+            return;
+        }
+        MarkedTarget mark = markedTargets.get(attacker.getUniqueId());
+        if (mark == null) {
+            return;
+        }
+        if (mark.until < System.nanoTime() / 1_000_000L) {
+            markedTargets.remove(attacker.getUniqueId());
+            return;
+        }
+        if (countPaperDolls(attacker) < config.teleportCost()) {
+            return;
+        }
+        markedTargets.remove(attacker.getUniqueId());
+        consumePaperDolls(attacker, config.teleportCost());
+        Player target = Bukkit.getPlayer(mark.target);
+        if (target != null && target.isOnline()) {
+            attacker.teleport(findSafeLocation(target));
+        }
+    }
+
     private Location findSafeLocation(Player target) {
         Location base = target.getLocation();
         Location[] candidates = {

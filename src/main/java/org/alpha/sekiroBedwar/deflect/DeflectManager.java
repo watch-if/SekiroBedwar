@@ -7,6 +7,7 @@ import org.alpha.sekiroBedwar.duel.DuelManager;
 import org.alpha.sekiroBedwar.duel.DuelState;
 import org.alpha.sekiroBedwar.paperdoll.PaperDollManager;
 import org.bukkit.Bukkit;
+import org.bukkit.Material;
 import org.bukkit.entity.Player;
 import org.bukkit.event.entity.EntityDamageByEntityEvent;
 import org.bukkit.plugin.Plugin;
@@ -141,14 +142,22 @@ public final class DeflectManager {
         victim.damage(acc);
     }
 
-    /** 周期清理：反击窗口到期未反击 → 丢弃累计。 */
+    /** 周期清理：弹反窗口结束强制解除持盾；反击窗口到期未反击 → 丢弃累计。 */
     private void expire() {
         if (states.isEmpty()) {
             return;
         }
         long now = now();
         for (Map.Entry<UUID, DeflectState> entry : new ArrayList<>(states.entrySet())) {
-            if (now >= entry.getValue().counterUntil) {
+            DeflectState state = entry.getValue();
+            if (now >= state.deflectUntil && !state.released) {
+                state.released = true;
+                Player player = Bukkit.getPlayer(entry.getKey());
+                if (player != null && player.isOnline()) {
+                    player.setCooldown(Material.SHIELD, 1);
+                }
+            }
+            if (now >= state.counterUntil) {
                 states.remove(entry.getKey());
             }
         }
@@ -213,5 +222,6 @@ public final class DeflectManager {
         long deflectUntil;
         long counterUntil;
         double accumulated;
+        boolean released;
     }
 }

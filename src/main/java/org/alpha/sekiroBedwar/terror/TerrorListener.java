@@ -1,40 +1,51 @@
-package org.alpha.sekiroBedwar.paperdoll;
+package org.alpha.sekiroBedwar.terror;
 
-import org.bukkit.entity.Fireball;
 import org.bukkit.entity.Player;
-import org.bukkit.entity.Projectile;
-import org.bukkit.entity.Trident;
-import org.bukkit.entity.WindCharge;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.block.Action;
 import org.bukkit.event.entity.PlayerDeathEvent;
-import org.bukkit.event.entity.ProjectileHitEvent;
-import org.bukkit.event.entity.ProjectileLaunchEvent;
 import org.bukkit.event.inventory.ClickType;
 import org.bukkit.event.inventory.InventoryAction;
 import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.event.inventory.InventoryMoveItemEvent;
 import org.bukkit.event.player.PlayerDropItemEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
+import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.inventory.EquipmentSlot;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.ItemStack;
 
 /**
- * 纸人监听器：丢弃/容器拦截 + 抛投物绑定 + 投掷物命中后传送。
+ * 僵尸头颅监听器（薄壳）：左键使用 + 死亡清理 + 拦丢弃/容器 + 清理。
  */
-public final class PaperDollListener implements Listener {
-    private final PaperDollManager manager;
+public final class TerrorListener implements Listener {
+    private final TerrorManager manager;
 
-    public PaperDollListener(PaperDollManager manager) {
+    public TerrorListener(TerrorManager manager) {
         this.manager = manager;
     }
 
     @EventHandler(priority = EventPriority.NORMAL, ignoreCancelled = true)
+    public void onInteract(PlayerInteractEvent event) {
+        if (event.getAction() != Action.LEFT_CLICK_AIR && event.getAction() != Action.LEFT_CLICK_BLOCK) {
+            return;
+        }
+        if (event.getHand() != EquipmentSlot.HAND) {
+            return;
+        }
+        manager.handleUse(event.getPlayer(), event.getItem());
+    }
+
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void onPlayerDeath(PlayerDeathEvent event) {
+        manager.handleDeath(event);
+    }
+
+    @EventHandler(priority = EventPriority.NORMAL, ignoreCancelled = true)
     public void onDrop(PlayerDropItemEvent event) {
-        if (manager.isPaperDoll(event.getItemDrop().getItemStack())) {
+        if (manager.isZombieHead(event.getItemDrop().getItemStack())) {
             event.setCancelled(true);
         }
     }
@@ -46,7 +57,7 @@ public final class PaperDollListener implements Listener {
         }
         ItemStack current = event.getCurrentItem();
         ItemStack cursor = event.getCursor();
-        boolean involved = manager.isPaperDoll(current) || manager.isPaperDoll(cursor);
+        boolean involved = manager.isZombieHead(current) || manager.isZombieHead(cursor);
         if (!involved) {
             return;
         }
@@ -71,48 +82,13 @@ public final class PaperDollListener implements Listener {
 
     @EventHandler(priority = EventPriority.NORMAL, ignoreCancelled = true)
     public void onInventoryMove(InventoryMoveItemEvent event) {
-        if (manager.isPaperDoll(event.getItem())) {
+        if (manager.isZombieHead(event.getItem())) {
             event.setCancelled(true);
         }
     }
 
-    @EventHandler(priority = EventPriority.NORMAL, ignoreCancelled = true)
-    public void onProjectileLaunch(ProjectileLaunchEvent event) {
-        if (!(event.getEntity().getShooter() instanceof Player shooter)) {
-            return;
-        }
-        manager.handleProjectileLaunch(shooter, event.getEntity());
-    }
-
-    @EventHandler(priority = EventPriority.NORMAL, ignoreCancelled = true)
-    public void onProjectileHit(ProjectileHitEvent event) {
-        Projectile projectile = event.getEntity();
-        if (!(projectile instanceof Trident) && !(projectile instanceof WindCharge)
-                && !(projectile instanceof Fireball)) {
-            return;
-        }
-        if (!(projectile.getShooter() instanceof Player shooter)) {
-            return;
-        }
-        if (!(event.getHitEntity() instanceof Player victim)) {
-            return;
-        }
-        manager.handleProjectileHit(shooter, victim);
-    }
-
-    @EventHandler(priority = EventPriority.NORMAL, ignoreCancelled = true)
-    public void onInteract(PlayerInteractEvent event) {
-        if (event.getAction() != Action.LEFT_CLICK_AIR && event.getAction() != Action.LEFT_CLICK_BLOCK) {
-            return;
-        }
-        if (event.getHand() != EquipmentSlot.HAND) {
-            return;
-        }
-        manager.handleSwing(event.getPlayer());
-    }
-
-    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
-    public void onPlayerDeath(PlayerDeathEvent event) {
-        manager.handlePlayerDeath(event);
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onQuit(PlayerQuitEvent event) {
+        manager.clear(event.getPlayer().getUniqueId());
     }
 }

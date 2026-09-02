@@ -106,6 +106,11 @@ public final class SettlementManager {
         }
         Duel duel = duelManager.getDuel(victim.getUniqueId()).orElse(null);
         if (duel == null) {
+            // 非决斗死亡：被玩家击杀 → 全部资源（铁金钻绿）转移给击杀者；其余由 BedWars 清除不掉落。
+            Player killer = victim.getKiller();
+            if (killer != null && !killer.equals(victim)) {
+                settleFromDrops(event, victim, killer, 1.0);
+            }
             return;
         }
         DuelState state = duel.getState();

@@ -448,6 +448,32 @@ danger:
   mikiri-window-ms: 170
   shield-break-seconds: 1.0
 
+# ---------- 佛珠（BeadManager，商店消耗品） ----------
+# 单局购买上限 4 次，每次 +5 最大血量（全局增益，死后重生恢复）；价格 4→6→8→10 钻递增。
+bead:
+  enabled: true
+  max-purchases: 4
+  hp-per-bead: 5
+  base-price: 4
+  price-increment: 2
+  currency: diamond
+  material: ENDER_EYE
+  name: "佛珠"
+
+# ---------- 僵尸头颅 / 恐怖条（TerrorManager，独立新机制） ----------
+# 击杀玩家 50% 掉僵尸头颅；左键使用（耗 3 纸人 + 1 头颅）→ 半径 3 内 2s 反胃 + 1HP/s + 恐怖累积。
+# 恐怖条 F∈[0,100] 后台记录、不展示，满 100 瞬秒；无维持态时 -10/s 衰减。
+terror:
+  enabled: true
+  drop-chance: 0.5
+  paper-doll-cost: 3
+  radius: 3.0
+  duration-ms: 2000
+  terror-per-second: 30.0
+  decay-per-second: 10.0
+  damage-per-second: 1.0
+  max-terror: 100.0
+
 # ============ 四、示例与杂项 ============
 
 # ---------- 可选：预先配置的决斗岛屿白名单 ----------

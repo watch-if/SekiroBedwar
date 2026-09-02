@@ -1,5 +1,7 @@
 package org.alpha.sekiroBedwar;
 
+import org.alpha.sekiroBedwar.bead.BeadConfig;
+import org.alpha.sekiroBedwar.bead.BeadManager;
 import org.alpha.sekiroBedwar.block.BlockConfig;
 import org.alpha.sekiroBedwar.block.BlockManager;
 import org.alpha.sekiroBedwar.deflect.DeflectConfig;
@@ -34,6 +36,8 @@ import org.alpha.sekiroBedwar.stance.StanceListener;
 import org.alpha.sekiroBedwar.stance.StanceManager;
 import org.alpha.sekiroBedwar.stance.StanceXpDisplay;
 import org.alpha.sekiroBedwar.swordblock.SwordBlockingManager;
+import org.alpha.sekiroBedwar.terror.TerrorConfig;
+import org.alpha.sekiroBedwar.terror.TerrorManager;
 import org.bukkit.plugin.java.JavaPlugin;
 
 /**
@@ -92,6 +96,8 @@ public final class SekiroBedwar extends JavaPlugin {
     private DriftingPaperDollManager driftingPaperDollManager;
     private DeflectManager deflectManager;
     private DangerManager dangerManager;
+    private BeadManager beadManager;
+    private TerrorManager terrorManager;
 
     @Override
     public void onEnable() {
@@ -152,6 +158,14 @@ public final class SekiroBedwar extends JavaPlugin {
         // 盾牌弹反返还（独立新机制）：主手持盾右键扣纸人 → 2s 免疫累计 → 1.5s 内命中返还
         this.deflectManager = new DeflectManager(this, new DeflectConfig(this), this.paperDollManager, this.duelManager);
         this.deflectManager.enable();
+
+        // 佛珠（商店消耗品）：单局上限 4 次、每次 +5 最大血量、价格递增
+        this.beadManager = new BeadManager(this, new BeadConfig(this));
+        this.beadManager.enable();
+
+        // 僵尸头颅 + 恐怖条（独立新机制）
+        this.terrorManager = new TerrorManager(this, new TerrorConfig(this), this.paperDollManager);
+        this.terrorManager.enable();
 
         // 巴之雷
         this.lightningManager = new LightningManager(this, new LightningConfig(this), stanceManager, duelManager,
@@ -226,6 +240,12 @@ public final class SekiroBedwar extends JavaPlugin {
         }
         if (this.deflectManager != null) {
             this.deflectManager.disable();
+        }
+        if (this.terrorManager != null) {
+            this.terrorManager.disable();
+        }
+        if (this.beadManager != null) {
+            this.beadManager.disable();
         }
         if (this.driftingPaperDollManager != null) {
             this.driftingPaperDollManager.disable();
@@ -356,5 +376,15 @@ public final class SekiroBedwar extends JavaPlugin {
     /** 获取危攻击 / 识破管理器。 */
     public DangerManager getDangerManager() {
         return this.dangerManager;
+    }
+
+    /** 获取佛珠管理器。 */
+    public BeadManager getBeadManager() {
+        return this.beadManager;
+    }
+
+    /** 获取僵尸头颅 / 恐怖条管理器。 */
+    public TerrorManager getTerrorManager() {
+        return this.terrorManager;
     }
 }
