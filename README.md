@@ -4,7 +4,7 @@
 > 及 Bandai Namco Entertainment Inc. 无任何关联。
 > "Sekiro" 及相关商标归其各自所有者所有。
 
-将《只狼：影逝二度》(Sekiro: Shadows Die Twice) 的战斗机制带入 **ScreamingBedWars** 的 Minecraft Spigot 插件。它不修改 BedWars 本体，而是通过 BedWars API 与事件系统叠加实现一整套「架势—弹反—崩条—处决」的决斗玩法，让床战中的两人对决变成只狼式的攻防博弈。
+将《只狼：影逝二度》(Sekiro: Shadows Die Twice) 的战斗机制带入 **ScreamingBedWars** 的 Minecraft Spigot 插件。它不修改 BedWars 本体，而是通过 BedWars API 与事件系统叠加实现一整套「架势—弹反—崩条—处决」的决斗玩法，让BedWar中的两人对决变成只狼式的攻防博弈。
 
 - **服务端版本**：Paper / Spigot `1.21.11`
 - **语言 / 运行时**：Java 21
