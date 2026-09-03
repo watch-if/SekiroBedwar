@@ -8,7 +8,7 @@
 
 - **服务端版本**：Paper / Spigot `1.21.11`
 - **语言 / 运行时**：Java 21
-- **依赖**：ScreamingBedWars（软依赖，见下文）
+- **依赖**：ScreamingBedWars（硬依赖，见下文）
 - **命令 / 权限**：无。所有机制全自动、事件驱动，无需任何指令或权限配置
 - **配置文件**：`plugins/SekiroBedwar/duel.yml`（唯一配置文件，所有模块共用）
 
