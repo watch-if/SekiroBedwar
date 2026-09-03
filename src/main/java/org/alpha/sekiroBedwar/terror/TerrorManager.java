@@ -1,6 +1,7 @@
 package org.alpha.sekiroBedwar.terror;
 
 import org.alpha.sekiroBedwar.SekiroBedwar;
+import org.alpha.sekiroBedwar.deflect.DeflectManager;
 import org.alpha.sekiroBedwar.paperdoll.PaperDollManager;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
@@ -30,6 +31,7 @@ public final class TerrorManager {
     private final SekiroBedwar plugin;
     private final TerrorConfig config;
     private final PaperDollManager paperDollManager;
+    private final DeflectManager deflectManager;
     private final NamespacedKey ownerKey;
     private final TerrorListener listener;
 
@@ -37,10 +39,12 @@ public final class TerrorManager {
     private final List<TerrorZone> zones = new ArrayList<>();
     private BukkitTask tickTask;
 
-    public TerrorManager(SekiroBedwar plugin, TerrorConfig config, PaperDollManager paperDollManager) {
+    public TerrorManager(SekiroBedwar plugin, TerrorConfig config, PaperDollManager paperDollManager,
+                         DeflectManager deflectManager) {
         this.plugin = plugin;
         this.config = config;
         this.paperDollManager = paperDollManager;
+        this.deflectManager = deflectManager;
         this.ownerKey = new NamespacedKey(plugin, "zombie_head");
         this.listener = new TerrorListener(this);
     }
@@ -176,7 +180,7 @@ public final class TerrorManager {
                     }
                 }
                 double f = terror.getOrDefault(id, 0.0);
-                if (inZone) {
+                if (inZone && !deflectManager.isDeflecting(id)) {
                     f += config.terrorPerSecond();
                     player.addPotionEffect(new PotionEffect(PotionEffectType.NAUSEA, 40, 0, false, false, false));
                     player.damage(config.damagePerSecond());

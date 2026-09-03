@@ -176,6 +176,7 @@ public final class LightningManager {
         if (airborne && inJumpWindow(attacker.getUniqueId(), victim)) {
             triggerLightning(attacker, victim);
             resetCombo(attacker.getUniqueId());
+            tridentJumpUntil.remove(attacker.getUniqueId());
             return;
         }
         if (parried) {
@@ -277,16 +278,15 @@ public final class LightningManager {
         }
     }
 
-    /** 是否处于跳击窗口（三连击窗口 或 三叉戟对目标窗口）。 */
+    /** 是否处于跳击窗口（三连击窗口 或 三叉戟窗口）。 */
     private boolean inJumpWindow(UUID buyer, Player victim) {
         long now = now();
         Long comboUntil = comboReadyUntil.get(buyer);
         if (comboUntil != null && comboUntil > now) {
             return true;
         }
-        UUID tt = tridentTarget.get(buyer);
         Long tj = tridentJumpUntil.get(buyer);
-        return tt != null && tt.equals(victim.getUniqueId()) && tj != null && tj > now;
+        return tj != null && tj > now;
     }
 
     /** 计数三连击（≤ max-interval 连续，达到 required-hits 开启跳击窗口）。 */

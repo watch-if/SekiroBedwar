@@ -20,7 +20,7 @@ stance:
       IRON_INGOT: 1.0
       GOLD_INGOT: 3.0
       DIAMOND: 10.0
-      EMERALD: 10.0
+      EMERALD: 20.0
   # 崩条（架势崩）与处决窗口（StanceBreakManager，独立模块）
   # 临界状态 = 已消耗架势比例达到 critical-ratio（默认 1.0 = 架势条空 / current≈0）。
   # 到达临界【不会】自动崩条，只有满足 trigger 条件才崩：

@@ -139,11 +139,6 @@ public final class SekiroBedwar extends JavaPlugin {
         this.stanceBreakManager = new StanceBreakManager(this, stanceConfig, stanceManager);
         this.stanceBreakManager.enable();
 
-        // 危攻击 / 识破（独立模块）：主手持矛（突进附魔）疾跑攻击 = 危，不可弹反，
-        // 格挡破盾 + 扣架势，识破（下蹲 170ms 内接危）反击
-        this.dangerManager = new DangerManager(this, new DangerConfig(this), stanceManager, duelManager);
-        this.dangerManager.enable();
-
         // 剑攻速强化
         this.speedManager = new SpeedManager(this, new SpeedConfig(this));
         this.speedManager.enable();
@@ -164,13 +159,18 @@ public final class SekiroBedwar extends JavaPlugin {
         this.beadManager.enable();
 
         // 僵尸头颅 + 恐怖条（独立新机制）
-        this.terrorManager = new TerrorManager(this, new TerrorConfig(this), this.paperDollManager);
+        this.terrorManager = new TerrorManager(this, new TerrorConfig(this), this.paperDollManager, this.deflectManager);
         this.terrorManager.enable();
 
         // 巴之雷
         this.lightningManager = new LightningManager(this, new LightningConfig(this), stanceManager, duelManager,
                 this.paperDollManager);
         this.lightningManager.enable();
+
+        // 危攻击 / 识破（独立模块）：主手持矛（突进附魔）疾跑攻击 = 危，不可弹反，
+        // 格挡破盾 + 扣架势，识破（下蹲 170ms 内接危）反击
+        this.dangerManager = new DangerManager(this, new DangerConfig(this), stanceManager, duelManager);
+        this.dangerManager.enable();
 
         // 普通格挡 / 受击架势（独立模块）：无格挡命中扣受击方架势 Dactual×hit-multiplier；
         // 盾牌普通格挡不完全免架势——防守方扣 Dbase×defender-multiplier（攻击方不扣）。

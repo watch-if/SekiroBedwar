@@ -71,13 +71,15 @@ public final class DeflectManager {
         states.remove(uuid);
     }
 
+    /** 玩家是否处于弹反窗口（免疫 + 累计阶段，也用于免疫僵尸头颅范围的负面）。 */
+    public boolean isDeflecting(UUID uuid) {
+        DeflectState state = states.get(uuid);
+        return state != null && now() < state.deflectUntil;
+    }
+
     /** 主手持盾右键触发：扣纸人并进入弹反窗口。 */
     public boolean tryStartDeflect(Player player) {
         if (player == null || !player.isOnline()) {
-            return false;
-        }
-        Duel duel = duelManager.getDuel(player.getUniqueId()).orElse(null);
-        if (duel == null || duel.getState() != DuelState.ACTIVE) {
             return false;
         }
         if (!paperDollManager.consumePaperDolls(player, config.paperDollCost())) {
