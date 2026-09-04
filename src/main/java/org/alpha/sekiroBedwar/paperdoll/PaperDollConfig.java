@@ -5,6 +5,10 @@ import org.bukkit.Material;
 import org.bukkit.configuration.file.YamlConfiguration;
 
 import java.io.File;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
 
 /**
  * 纸人配置：封装 <code>duel.yml</code> 的 <code>paper-doll:</code> 段。
@@ -21,6 +25,7 @@ public final class PaperDollConfig {
     private int lightningCost;
     private boolean throwEnabled;
     private int throwCost;
+    private Set<Material> throwWhitelist;
     private boolean teleportEnabled;
     private long teleportWindowMs;
     private int teleportCost;
@@ -60,6 +65,8 @@ public final class PaperDollConfig {
         this.lightningCost = Math.max(0, yaml.getInt("paper-doll.lightning-cost", 4));
         this.throwEnabled = yaml.getBoolean("paper-doll.throw.enabled", true);
         this.throwCost = Math.max(1, yaml.getInt("paper-doll.throw.cost", 1));
+        this.throwWhitelist = parseMaterialList(yaml, "paper-doll.throw.whitelist",
+                Material.SPLASH_POTION, Material.LINGERING_POTION, Material.EGG, Material.SNOWBALL);
         this.teleportEnabled = yaml.getBoolean("paper-doll.teleport.enabled", true);
         this.teleportWindowMs = Math.max(0L, yaml.getLong("paper-doll.teleport.window-ms", 2000L));
         this.teleportCost = Math.max(1, yaml.getInt("paper-doll.teleport.cost", 1));
@@ -95,6 +102,26 @@ public final class PaperDollConfig {
         } catch (IllegalArgumentException | NullPointerException ignored) {
             return Material.PAPER;
         }
+    }
+
+    private Set<Material> parseMaterialList(YamlConfiguration yaml, String key, Material... defaults) {
+        Set<Material> result = new HashSet<>();
+        Object raw = yaml.get(key);
+        List<?> list = raw instanceof List ? (List<?>) raw : null;
+        if (list == null || list.isEmpty()) {
+            Collections.addAll(result, defaults);
+            return result;
+        }
+        for (Object item : list) {
+            if (item == null) {
+                continue;
+            }
+            try {
+                result.add(Material.valueOf(String.valueOf(item).trim().toUpperCase()));
+            } catch (IllegalArgumentException ignored) {
+            }
+        }
+        return result;
     }
 
     private static int toInt(Object value, int def) {
@@ -141,6 +168,10 @@ public final class PaperDollConfig {
 
     public int throwCost() {
         return throwCost;
+    }
+
+    public Set<Material> throwWhitelist() {
+        return throwWhitelist;
     }
 
     public boolean teleportEnabled() {

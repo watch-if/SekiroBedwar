@@ -6,9 +6,12 @@ import org.bukkit.ChatColor;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.NamespacedKey;
+import org.bukkit.entity.Egg;
 import org.bukkit.entity.Fireball;
 import org.bukkit.entity.Player;
 import org.bukkit.entity.Projectile;
+import org.bukkit.entity.Snowball;
+import org.bukkit.entity.ThrownPotion;
 import org.bukkit.entity.Trident;
 import org.bukkit.entity.WindCharge;
 import org.bukkit.event.entity.PlayerDeathEvent;
@@ -129,6 +132,11 @@ public final class PaperDollManager {
         if (!config.throwEnabled()) {
             return;
         }
+        // 白名单投掷物（喷溅/滞留药水、鸡蛋、雪球等）不消耗纸人
+        Material mat = projectileMaterial(projectile);
+        if (mat != null && config.throwWhitelist().contains(mat)) {
+            return;
+        }
         if (countPaperDolls(shooter) < config.throwCost()) {
             return;
         }
@@ -138,6 +146,29 @@ public final class PaperDollManager {
             ItemStack item = new ItemStack(refund);
             Bukkit.getScheduler().runTask(plugin, () -> shooter.getInventory().addItem(item));
         }
+    }
+
+    private Material projectileMaterial(Projectile projectile) {
+        if (projectile instanceof Egg) {
+            return Material.EGG;
+        }
+        if (projectile instanceof Snowball) {
+            return Material.SNOWBALL;
+        }
+        if (projectile instanceof ThrownPotion potion) {
+            ItemStack item = potion.getItem();
+            return item == null ? null : item.getType();
+        }
+        if (projectile instanceof WindCharge) {
+            return Material.WIND_CHARGE;
+        }
+        if (projectile instanceof Trident) {
+            return Material.TRIDENT;
+        }
+        if (projectile instanceof Fireball) {
+            return Material.FIRE_CHARGE;
+        }
+        return null;
     }
 
     private Material refundMaterial(Projectile projectile) {

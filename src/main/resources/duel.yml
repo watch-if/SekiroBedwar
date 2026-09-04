@@ -406,6 +406,8 @@ paper-doll:
   throw:
     enabled: true
     cost: 1
+    # 白名单：这些投掷物使用时【不消耗】纸人（喷溅/滞留药水、鸡蛋、雪球）
+    whitelist: [SPLASH_POTION, LINGERING_POTION, EGG, SNOWBALL]
   # 投掷物命中后传送（命中目标后 window-ms 内追加近战命中传送）
   teleport:
     enabled: true
