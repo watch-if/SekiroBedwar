@@ -6,13 +6,13 @@ import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.block.Action;
-import org.bukkit.event.entity.EntityDamageByEntityEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.inventory.EquipmentSlot;
 
 /**
- * 盾牌弹反返还监听器（薄壳）：主手持盾右键触发 + 免疫累计 + 反击返还 + 清理。
+ * 盾牌弹反监听器（薄壳）：主手持盾右键触发纸人弹反窗口 + 决斗结束 / 退出清理。
+ * 命中处理不在此监听——窗口内的近战命中由 {@code ParryManager}（HIGH）按完美弹反处理。
  */
 public final class DeflectListener implements Listener {
     private final DeflectManager manager;
@@ -32,17 +32,7 @@ public final class DeflectListener implements Listener {
         if (event.getItem() == null || event.getItem().getType() != Material.SHIELD) {
             return;
         }
-        manager.tryStartDeflect(event.getPlayer());
-    }
-
-    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = false)
-    public void onDamageNegate(EntityDamageByEntityEvent event) {
-        manager.handleNegate(event);
-    }
-
-    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = false)
-    public void onDamageReflect(EntityDamageByEntityEvent event) {
-        manager.handleReflect(event);
+        manager.requestDeflect(event.getPlayer());
     }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)

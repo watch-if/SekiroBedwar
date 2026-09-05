@@ -3,6 +3,7 @@ package org.alpha.sekiroBedwar.parry;
 import org.alpha.sekiroBedwar.SekiroBedwar;
 import org.alpha.sekiroBedwar.combat.CombatUtils;
 import org.alpha.sekiroBedwar.danger.DangerManager;
+import org.alpha.sekiroBedwar.deflect.DeflectManager;
 import org.alpha.sekiroBedwar.duel.Duel;
 import org.alpha.sekiroBedwar.duel.DuelManager;
 import org.alpha.sekiroBedwar.duel.DuelState;
@@ -51,6 +52,10 @@ import java.util.Optional;
  * </pre>
  * 举盾时刻 = 格挡轮询（{@code poll-ticks}）记录到的格挡开始；命中落在「举盾后 base-window-ms 内」
  * （默认 170ms）即完美弹反。同 tick 刚举盾即命中由 {@code eagerStart} 兜底（0 延时）。</p>
+ *
+ * <p><b>纸人盾牌弹反（{@code deflect/}）</b>：主手举盾消耗纸人后 {@code deflect-window-ms}（默认 2s）
+ * 内为强制完美弹反窗口——窗口内每一记近战命中都直接走本管理器的完美弹反分支（免 170ms 窗口与
+ * 「一次按住只弹反一击」限制，且不消耗格挡记录）；危攻击仍不可弹反。</p>
  */
 public final class ParryManager {
     private final SekiroBedwar plugin;
@@ -63,12 +68,14 @@ public final class ParryManager {
     private final ParrySealManager sealManager;
     private final LightningManager lightningManager;
     private final DangerManager dangerManager;
+    private final DeflectManager deflectManager;
     private final ParryListener listener;
 
     public ParryManager(SekiroBedwar plugin, ParryConfig config,
                         StanceManager stanceManager, DuelManager duelManager,
                         StanceBreakManager stanceBreakManager, ParrySealManager sealManager,
-                        LightningManager lightningManager, DangerManager dangerManager) {
+                        LightningManager lightningManager, DangerManager dangerManager,
+                        DeflectManager deflectManager) {
         this.plugin = plugin;
         this.config = config;
         this.latency = new LatencyCompensationManager(config);
@@ -79,6 +86,7 @@ public final class ParryManager {
         this.sealManager = sealManager;
         this.lightningManager = lightningManager;
         this.dangerManager = dangerManager;
+        this.deflectManager = deflectManager;
         this.listener = new ParryListener(this, window, latency);
     }
 
@@ -144,10 +152,14 @@ public final class ParryManager {
             sealManager.onHitLanded(attacker);
             return;
         }
+        // 纸人盾牌弹反：受击方处于弹反窗口（主手举盾扣纸人后 deflect-window-ms 内）→ 窗口内
+        // 每一记近战命中都按完美弹反处理，绕过「举盾后 170ms」窗口与「一次按住只弹反一击」限制。
+        // 危攻击不可弹反的判定在本分支之前（不受窗口影响）；受击状态（无法格挡）期间不授予强制弹反。
+        boolean forced = deflectManager.isDeflecting(victim.getUniqueId()) && stanceManager.canBlock(victim);
         // 完美弹反失败：未格挡 → 无格挡分支；格挡但超出窗口 → 普通格挡分支。
         // 均不由本管理器处理，直接返回（block 模块按普通格挡/无格挡规则应用，绝不误判为完美弹反）。
         // 近战未弹反的成功命中 → 同样打断连续被弹反计数。
-        if (!window.isBlocking(victim) || !isPerfectParry(victim)) {
+        if (!forced && (!window.isBlocking(victim) || !isPerfectParry(victim))) {
             sealManager.onHitLanded(attacker);
             return;
         }
@@ -183,8 +195,11 @@ public final class ParryManager {
         stanceManager.clearBlockingDisable(victim.getUniqueId());
         victim.setCooldown(Material.SHIELD, 0);
         // 一次按下只弹反一击：消耗本次格挡按住（holdConsumed 置位），
-        // 同一按住中的后续命中按普通格挡处理（连击 / 快速攻击不会因同一按下被连续判为完美弹反）
-        window.consumeBlockStart(victim.getUniqueId());
+        // 同一按住中的后续命中按普通格挡处理（连击 / 快速攻击不会因同一按下被连续判为完美弹反）。
+        // 纸人弹反窗口（forced）不消耗——窗口内每一击都要弹反，且不得污染窗口结束后的普通判定。
+        if (!forced) {
+            window.consumeBlockStart(victim.getUniqueId());
+        }
         lightningManager.onAttack(attacker, victim, true);
     }
 

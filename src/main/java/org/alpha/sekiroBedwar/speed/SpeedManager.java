@@ -43,6 +43,8 @@ import java.util.UUID;
  * 任何扣费/给物之前 return</b>——因此拦截「取消 + 自己 removeItem 扣费 + 应用修正」，既不给
  * marker 物品也不双扣。拦截只认 display-name 前缀（「剑攻速强化 Lv.N」），不误伤其它商店物品。</p>
  *
+ * <p><b>逐级购买</b>：等级只能按 Lv.1 → Lv.2 → Lv.3 顺序购买，不可跳级（仿巴之雷两级）。</p>
+ *
  * <p><b>生命周期</b>：等级存本模块 {@code Map<UUID,Integer>}（BedWars 升级系统为队伍级，无玩家级）。
  * 原版死亡重生重建玩家实体，属性修正不保留 → {@link PlayerRespawnedEvent} 后 1 tick 重应用
  * （对齐 BedWars 自己 EnchantmentUpgradeHandler 的做法）；{@code removeModifier} 先行保证幂等
@@ -132,6 +134,11 @@ public final class SpeedManager {
         int current = levels.getOrDefault(uuid, 0);
         if (level <= current) {
             player.sendMessage("§c剑攻速强化 Lv." + level + " 已购买过！");
+            return;
+        }
+        // 逐级购买（仿巴之雷两级）：只允许买下一级，不可跳级
+        if (level > current + 1) {
+            player.sendMessage("§c剑攻速强化需逐级购买，请先购买 Lv." + (current + 1) + "！");
             return;
         }
         try {
@@ -317,6 +324,9 @@ public final class SpeedManager {
             sb.append("        - \"").append(yamlEscape("攻击冷却缩短至 " + cooldownTicks(level) + " tick"))
                     .append("\"\n");
             sb.append("        - \"").append(yamlEscape("本局永久生效，死亡后保留")).append("\"\n");
+            if (level > 1) {
+                sb.append("        - \"").append(yamlEscape("需先购买 Lv." + (level - 1) + "（逐级购买）")).append("\"\n");
+            }
         }
         sb.append(MARKER_END).append('\n');
         return sb.toString();

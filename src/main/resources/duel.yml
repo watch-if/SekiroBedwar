@@ -312,8 +312,8 @@ freeze:
     enabled: true
 
 # ---------- 剑攻速强化（SpeedManager，独立模块） ----------
-# 商店可购买的等级化强化：购买后给玩家实体加 ATTACK_SPEED 修正（ADD_NUMBER），
-# 降低本人所有近战武器（剑/斧）的攻击冷却。
+# 商店可购买的等级化强化（逐级购买 Lv.1→Lv.2→Lv.3，不可跳级）：购买后给玩家实体加
+# ATTACK_SPEED 修正（ADD_NUMBER），降低本人所有近战武器（剑/斧）的攻击冷却。
 sword-speed:
   # 是否启用（false 时不注入商店、不拦截购买）
   enabled: true
@@ -333,6 +333,7 @@ sword-speed:
     lore:
       - "永久提升你的近战攻击速度（本局）"
   # 每个等级的购买价格（条数 = 有效最大等级；currency 用 BedWars 资源名 bronze/iron/gold/diamond/emerald）
+  # 逐级购买：只能买「当前等级 +1」，跳级点击被拦截（不扣费）
   prices:
     - currency: iron
       amount: 15
@@ -430,15 +431,20 @@ paper-doll:
     hp-reduction: 0.5
     paper-dolls-granted: 5
 
-# ---------- 盾牌弹反返还（DeflectManager，独立新机制） ----------
-# 主手持盾右键格挡 → 扣 paper-doll-cost 纸人 → 进入 deflect-window-ms 弹反窗口
-# （期间免疫并累计所有受到伤害）→ 之后 counter-window-ms 反击窗口内有效近战命中对方
-# → 把累计伤害返还。仅在 ACTIVE 决斗内生效。
+# ---------- 盾牌弹反（DeflectManager，独立机制） ----------
+# 主手持盾右键 → 1 tick 后确认【确实举盾】才扣 paper-doll-cost 纸人（防误触/连点重复扣）
+# → 举盾后 deflect-window-ms（默认 2s）内全部按【完美弹反窗口】处理：来袭的每一记近战命中
+#   都完整弹开（免伤免击退 + 攻击方重创架势，与完美弹反完全一致），不受「举盾后 170ms」
+#   窗口与「一次按住只弹反一击」限制——整个窗口每一击都弹反（这就是纸人的开销）。
+#   危攻击依然不可弹反；弓箭不参与（与完美弹反口径一致）；受击状态（无法格挡）期间不生效；
+#   弹反范围沿用完美弹反口径——仅 ACTIVE 决斗内对手的 melee 命中会被弹开。
+# → 窗口结束【强制解除举盾】（盾牌 1 tick 冷却打断持盾；可再右键举盾再付纸人开新窗）。
+# 窗口内玩家免疫僵尸头颅恐怖区负面（同前）。已处弹反窗口时再次右键不重复扣费；
+# 纸人不足静默失败（不扣不开窗，无文字提示）。
 deflect:
   enabled: true
   paper-doll-cost: 2
   deflect-window-ms: 2000
-  counter-window-ms: 1500
 
 # ---------- 危攻击 / 识破（DangerManager，独立新机制） ----------
 # 主手持矛（任一等级）+ 突进（LUNGE）附魔 + 疾跑攻击 = 危攻击：

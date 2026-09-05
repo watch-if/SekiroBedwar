@@ -415,7 +415,11 @@ public final class PaperDollManager {
     private String buildBlock() {
         StringBuilder sb = new StringBuilder();
         sb.append(MARKER_START).append('\n');
-        sb.append("  - price: 1 of iron\n");
+        // 静态价必须是 0（免费语法，hasPlayerInInventory 恒过）：BedWars 在触发
+        // StorePrePurchaseEvent 【之前】先用静态价预检可负担（ShopInventory.handleBuy），
+        // 若写 "N of iron" 则背包无铁的玩家在 2 队（金价）档点不动——事件根本不触发。
+        // 真实动态价由 handlePrePurchase 取消事件后自扣（按存活队伍数取铁/金/钻档）。
+        sb.append("  - price: 0 of iron\n");
         sb.append("    stack:\n");
         sb.append("      type: ").append(config.material().name().toLowerCase()).append('\n');
         sb.append("      display-name: \"").append(yamlEscape(config.name())).append("\"\n");

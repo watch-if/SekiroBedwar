@@ -6,7 +6,8 @@ import org.bukkit.configuration.file.YamlConfiguration;
 import java.io.File;
 
 /**
- * 盾牌弹反返还配置：封装 <code>duel.yml</code> 的 <code>deflect:</code> 段。
+ * 盾牌弹反配置：封装 <code>duel.yml</code> 的 <code>deflect:</code> 段。
+ * 主手举盾消耗纸人 → deflect-window-ms 内全部近战命中按完美弹反窗口处理 → 窗口结束强制收盾。
  */
 public final class DeflectConfig {
     private final SekiroBedwar plugin;
@@ -14,7 +15,6 @@ public final class DeflectConfig {
     private boolean enabled;
     private int paperDollCost;
     private long deflectWindowMs;
-    private long counterWindowMs;
 
     public DeflectConfig(SekiroBedwar plugin) {
         this.plugin = plugin;
@@ -31,7 +31,6 @@ public final class DeflectConfig {
         this.enabled = yaml.getBoolean("deflect.enabled", true);
         this.paperDollCost = Math.max(1, yaml.getInt("deflect.paper-doll-cost", 2));
         this.deflectWindowMs = Math.max(0L, yaml.getLong("deflect.deflect-window-ms", 2000L));
-        this.counterWindowMs = Math.max(0L, yaml.getLong("deflect.counter-window-ms", 1500L));
     }
 
     public boolean enabled() {
@@ -44,9 +43,5 @@ public final class DeflectConfig {
 
     public long deflectWindowMs() {
         return deflectWindowMs;
-    }
-
-    public long counterWindowMs() {
-        return counterWindowMs;
     }
 }

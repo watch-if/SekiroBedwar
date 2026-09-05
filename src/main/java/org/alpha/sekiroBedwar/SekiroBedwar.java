@@ -150,8 +150,9 @@ public final class SekiroBedwar extends JavaPlugin {
         this.driftingPaperDollManager = new DriftingPaperDollManager(this, paperDollConfig, this.paperDollManager);
         this.driftingPaperDollManager.enable();
 
-        // 盾牌弹反返还（独立新机制）：主手持盾右键扣纸人 → 2s 免疫累计 → 1.5s 内命中返还
-        this.deflectManager = new DeflectManager(this, new DeflectConfig(this), this.paperDollManager, this.duelManager);
+        // 盾牌弹反（独立模块）：主手举盾（右键 1 tick 后确认实际举盾）扣纸人 → 2s 内全部近战命中
+        // 按完美弹反窗口处理（由 ParryManager 查询）→ 窗口结束强制解除举盾（盾牌冷却）
+        this.deflectManager = new DeflectManager(this, new DeflectConfig(this), this.paperDollManager);
         this.deflectManager.enable();
 
         // 佛珠（商店消耗品）：单局上限 4 次、每次 +5 最大血量、价格递增
@@ -187,7 +188,8 @@ public final class SekiroBedwar extends JavaPlugin {
         this.parrySealManager = new ParrySealManager(this, parryConfig);
         this.parrySealManager.enable();
         this.parryManager = new ParryManager(this, parryConfig, stanceManager, duelManager,
-                stanceBreakManager, this.parrySealManager, this.lightningManager, this.dangerManager);
+                stanceBreakManager, this.parrySealManager, this.lightningManager, this.dangerManager,
+                this.deflectManager);
         this.parryManager.enable();
 
         // 决斗冻结系统（独立模块）：物资刷新冻结（白圈内刷新点暂停实际生成，计时照常，

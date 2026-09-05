@@ -1,15 +1,10 @@
 package org.alpha.sekiroBedwar.deflect;
 
 import org.alpha.sekiroBedwar.SekiroBedwar;
-import org.alpha.sekiroBedwar.combat.CombatUtils;
-import org.alpha.sekiroBedwar.duel.Duel;
-import org.alpha.sekiroBedwar.duel.DuelManager;
-import org.alpha.sekiroBedwar.duel.DuelState;
 import org.alpha.sekiroBedwar.paperdoll.PaperDollManager;
 import org.bukkit.Bukkit;
 import org.bukkit.Material;
 import org.bukkit.entity.Player;
-import org.bukkit.event.entity.EntityDamageByEntityEvent;
 import org.bukkit.plugin.Plugin;
 import org.bukkit.scheduler.BukkitTask;
 
@@ -17,13 +12,33 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
-import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
 
 /**
- * 盾牌弹反返还（独立新机制）：主手持盾右键扣纸人 → 2s 免疫累计 → 1.5s 内命中返还。
+ * 盾牌弹反（独立模块）：主手举盾消耗纸人 → 举盾后一段时间全部按完美弹反窗口处理 →
+ * 窗口结束强制解除举盾。
+ *
+ * <p><b>触发</b>：主手持盾右键（{@code PlayerInteractEvent}，HAND 槽 + SHIELD）。右键事件
+ * 后 <b>1 tick 延迟确认</b>——确认玩家确实处于 {@code isBlocking()}（真举盾）才扣
+ * {@code deflect.paper-doll-cost} 纸人并开窗，防止“点了右键但没举成盾”（点容器方块等）误扣；
+ * 已处于弹反窗口内再次右键不重复扣费。</p>
+ *
+ * <p><b>窗口语义</b>：{@code deflect.deflect-window-ms}（默认 2000ms）内来袭的
+ * <b>近战命中一律按完美弹反</b>处理（由 {@code ParryManager} 查询 {@link #isDeflecting}
+ * 强制走完美弹反分支——免伤免击退 + 攻击方架势 −= Dbase×parry-attacker-multiplier +
+ * 反馈音效 + 封印计数 + 崩条评估 + 巴之雷钩子，与普通完美弹反完全一致）。与普通完美弹反的
+ * 差别：不受「举盾后 170ms」窗口限制、不受「一次按住只弹反一击」限制——<b>整个窗口每一击
+ * 都弹反</b>（这就是纸人的开销）。危攻击依然不可弹反（ParryManager 危判定在窗口判定之前）；
+ * 弓箭不参与弹反（与完美弹反口径一致）；受击状态（stagger，无法格挡）期间不授予强制弹反。</p>
+ *
+ * <p><b>强制收盾</b>：窗口结束时 {@code setCooldown(SHIELD, 1)} 强制 {@code isBlocking()}
+ * 变 false（1.21.11 无“停止持盾”API，冷却是既有的强制手段）——玩家可立即重新右键举盾
+ * 再开一窗（再付纸人）。</p>
+ *
+ * <p><b>恐怖区免疫</b>：处于弹反窗口的玩家免疫僵尸头颅恐怖区的负面（{@code TerrorManager}
+ * 查询 {@link #isDeflecting}），语义不变。</p>
  */
 public final class DeflectManager {
     private static final String MARKER_START = "# === SekiroBedwar shield START ===";
@@ -33,18 +48,16 @@ public final class DeflectManager {
     private final SekiroBedwar plugin;
     private final DeflectConfig config;
     private final PaperDollManager paperDollManager;
-    private final DuelManager duelManager;
     private final DeflectListener listener;
 
-    private final Map<UUID, DeflectState> states = new HashMap<>();
+    /** 玩家 → 弹反窗口截止时刻（单调毫秒）。窗口结束即移除。 */
+    private final Map<UUID, Long> deflectUntil = new HashMap<>();
     private BukkitTask expireTask;
 
-    public DeflectManager(SekiroBedwar plugin, DeflectConfig config,
-                          PaperDollManager paperDollManager, DuelManager duelManager) {
+    public DeflectManager(SekiroBedwar plugin, DeflectConfig config, PaperDollManager paperDollManager) {
         this.plugin = plugin;
         this.config = config;
         this.paperDollManager = paperDollManager;
-        this.duelManager = duelManager;
         this.listener = new DeflectListener(this);
     }
 
@@ -56,7 +69,7 @@ public final class DeflectManager {
         expireTask = plugin.getServer().getScheduler().runTaskTimer(plugin, this::expire, 1L, 1L);
         injectShop();
         plugin.getLogger().info("盾牌弹反已启用：纸人×" + config.paperDollCost()
-                + " 弹反窗=" + config.deflectWindowMs() + "ms 反击窗=" + config.counterWindowMs() + "ms");
+                + " 完美弹反窗口=" + config.deflectWindowMs() + "ms（窗口结束强制收盾）");
     }
 
     public void disable() {
@@ -64,103 +77,60 @@ public final class DeflectManager {
             expireTask.cancel();
             expireTask = null;
         }
-        states.clear();
+        deflectUntil.clear();
     }
 
     public void clear(UUID uuid) {
-        states.remove(uuid);
+        deflectUntil.remove(uuid);
     }
 
-    /** 玩家是否处于弹反窗口（免疫 + 累计阶段，也用于免疫僵尸头颅范围的负面）。 */
+    /** 玩家是否处于纸人弹反窗口（= 完美弹反窗口，也用于免疫恐怖区负面）。 */
     public boolean isDeflecting(UUID uuid) {
-        DeflectState state = states.get(uuid);
-        return state != null && now() < state.deflectUntil;
+        Long until = deflectUntil.get(uuid);
+        return until != null && now() < until;
     }
 
-    /** 主手持盾右键触发：扣纸人并进入弹反窗口。 */
-    public boolean tryStartDeflect(Player player) {
+    /**
+     * 主手持盾右键触发（由 {@link DeflectListener} 调用）：1 tick 后确认实际举盾才扣纸人开窗。
+     * 已在窗口内 / 纸人不足 / 未举成盾 → 不扣费、不开窗。
+     */
+    public void requestDeflect(Player player) {
         if (player == null || !player.isOnline()) {
-            return false;
-        }
-        if (!paperDollManager.consumePaperDolls(player, config.paperDollCost())) {
-            return false;
-        }
-        long now = now();
-        DeflectState state = states.get(player.getUniqueId());
-        if (state == null) {
-            state = new DeflectState();
-            states.put(player.getUniqueId(), state);
-        }
-        state.deflectUntil = now + config.deflectWindowMs();
-        state.counterUntil = now + config.deflectWindowMs() + config.counterWindowMs();
-        state.accumulated = 0.0;
-        return true;
-    }
-
-    /** 弹反窗口免疫 + 累计（HIGHEST，先于完美弹反/普通格挡）。 */
-    public void handleNegate(EntityDamageByEntityEvent event) {
-        if (!config.enabled()) {
             return;
         }
-        if (!(event.getEntity() instanceof Player victim)) {
-            return;
+        final UUID uuid = player.getUniqueId();
+        if (isDeflecting(uuid)) {
+            return; // 已在弹反窗口内：不重复扣费（防连点/事件重复触发）
         }
-        DeflectState state = states.get(victim.getUniqueId());
-        if (state == null || now() >= state.deflectUntil) {
-            return;
-        }
-        double dmg = event.getFinalDamage();
-        if (dmg <= 0.0) {
-            dmg = event.getDamage();
-        }
-        state.accumulated += dmg;
-        event.setCancelled(true);
-    }
-
-    /** 反击窗口内有效近战命中 → 返还累计伤害（MONITOR，仅未取消的攻击）。 */
-    public void handleReflect(EntityDamageByEntityEvent event) {
-        if (!config.enabled()) {
-            return;
-        }
-        if (event.isCancelled()) {
-            return;
-        }
-        if (!(event.getEntity() instanceof Player victim)) {
-            return;
-        }
-        Player attacker = CombatUtils.resolveMeleeAttacker(event);
-        if (attacker == null || attacker.equals(victim)) {
-            return;
-        }
-        DeflectState state = states.get(attacker.getUniqueId());
-        if (state == null || now() < state.deflectUntil || now() >= state.counterUntil) {
-            return;
-        }
-        if (state.accumulated <= 0.0) {
-            return;
-        }
-        double acc = state.accumulated;
-        states.remove(attacker.getUniqueId());
-        victim.damage(acc);
-    }
-
-    /** 周期清理：弹反窗口结束强制解除持盾；反击窗口到期未反击 → 丢弃累计。 */
-    private void expire() {
-        if (states.isEmpty()) {
-            return;
-        }
-        long now = now();
-        for (Map.Entry<UUID, DeflectState> entry : new ArrayList<>(states.entrySet())) {
-            DeflectState state = entry.getValue();
-            if (now >= state.deflectUntil && !state.released) {
-                state.released = true;
-                Player player = Bukkit.getPlayer(entry.getKey());
-                if (player != null && player.isOnline()) {
-                    player.setCooldown(Material.SHIELD, 1);
-                }
+        Bukkit.getScheduler().runTaskLater(plugin, () -> {
+            Player p = Bukkit.getPlayer(uuid);
+            if (p == null || !p.isOnline() || !p.isBlocking()) {
+                return; // 未真正举盾（误触/被拦截）——不扣费
             }
-            if (now >= state.counterUntil) {
-                states.remove(entry.getKey());
+            if (isDeflecting(uuid)) {
+                return; // 延迟期间已有另一窗
+            }
+            if (!paperDollManager.consumePaperDolls(p, config.paperDollCost())) {
+                return; // 纸人不足：静默失败（沉浸原则，无文字提示）
+            }
+            deflectUntil.put(uuid, now() + config.deflectWindowMs());
+        }, 1L);
+    }
+
+    /** 周期检测：窗口结束 → 移除记录 + 强制解除举盾（盾牌 1 tick 冷却打断持盾）。 */
+    private void expire() {
+        if (deflectUntil.isEmpty()) {
+            return;
+        }
+        long now = now();
+        for (Map.Entry<UUID, Long> entry : new HashMap<>(deflectUntil).entrySet()) {
+            if (now < entry.getValue()) {
+                continue;
+            }
+            deflectUntil.remove(entry.getKey());
+            Player player = Bukkit.getPlayer(entry.getKey());
+            if (player != null && player.isOnline()) {
+                player.setCooldown(Material.SHIELD, 1);
             }
         }
     }
@@ -218,12 +188,5 @@ public final class DeflectManager {
                 + "      type: shield\n"
                 + "      display-name: \"盾牌\"\n"
                 + MARKER_END + "\n";
-    }
-
-    private static final class DeflectState {
-        long deflectUntil;
-        long counterUntil;
-        double accumulated;
-        boolean released;
     }
 }
