@@ -4,6 +4,8 @@ import org.alpha.sekiroBedwar.bead.BeadConfig;
 import org.alpha.sekiroBedwar.bead.BeadManager;
 import org.alpha.sekiroBedwar.block.BlockConfig;
 import org.alpha.sekiroBedwar.block.BlockManager;
+import org.alpha.sekiroBedwar.crow.CrowConfig;
+import org.alpha.sekiroBedwar.crow.CrowManager;
 import org.alpha.sekiroBedwar.deflect.DeflectConfig;
 import org.alpha.sekiroBedwar.deflect.DeflectManager;
 import org.alpha.sekiroBedwar.danger.DangerConfig;
@@ -26,6 +28,8 @@ import org.alpha.sekiroBedwar.duel.SettlementManager;
 import org.alpha.sekiroBedwar.parry.ParryConfig;
 import org.alpha.sekiroBedwar.parry.ParryManager;
 import org.alpha.sekiroBedwar.parry.ParrySealManager;
+import org.alpha.sekiroBedwar.shop.SekiroShopConfig;
+import org.alpha.sekiroBedwar.shop.SekiroShopManager;
 import org.alpha.sekiroBedwar.speed.SpeedConfig;
 import org.alpha.sekiroBedwar.speed.SpeedManager;
 import org.alpha.sekiroBedwar.stance.StanceBossBarDisplay;
@@ -98,6 +102,8 @@ public final class SekiroBedwar extends JavaPlugin {
     private DangerManager dangerManager;
     private BeadManager beadManager;
     private TerrorManager terrorManager;
+    private SekiroShopManager sekiroShopManager;
+    private CrowManager crowManager;
 
     @Override
     public void onEnable() {
@@ -139,38 +145,52 @@ public final class SekiroBedwar extends JavaPlugin {
         this.stanceBreakManager = new StanceBreakManager(this, stanceConfig, stanceManager);
         this.stanceBreakManager.enable();
 
-        // 剑攻速强化
-        this.speedManager = new SpeedManager(this, new SpeedConfig(this));
+        // 忍具商店（GUI 宿主）：先于全部可购买模块 enable——负责清理 shop.yml 的插件注入块、
+        // 接管商店主页右下角入口；各模块随后把自家商品 register 进 GUI（购买判定全在插件内）。
+        this.sekiroShopManager = new SekiroShopManager(this, new SekiroShopConfig(this));
+        this.sekiroShopManager.enable();
+
+        // 剑攻速强化（忍具商店 GUI 逐级购买）
+        this.speedManager = new SpeedManager(this, new SpeedConfig(this), this.sekiroShopManager);
         this.speedManager.enable();
 
         // 纸人（忍具系统 + 巴之雷消耗品）+ 漂流纸人
         PaperDollConfig paperDollConfig = new PaperDollConfig(this);
-        this.paperDollManager = new PaperDollManager(this, paperDollConfig);
+        this.paperDollManager = new PaperDollManager(this, paperDollConfig, this.sekiroShopManager);
         this.paperDollManager.enable();
-        this.driftingPaperDollManager = new DriftingPaperDollManager(this, paperDollConfig, this.paperDollManager);
+        this.driftingPaperDollManager = new DriftingPaperDollManager(this, paperDollConfig,
+                this.paperDollManager, this.sekiroShopManager);
         this.driftingPaperDollManager.enable();
 
         // 盾牌弹反（独立模块）：主手举盾（右键 1 tick 后确认实际举盾）扣纸人 → 2s 内全部近战命中
         // 按完美弹反窗口处理（由 ParryManager 查询）→ 窗口结束强制解除举盾（盾牌冷却）
-        this.deflectManager = new DeflectManager(this, new DeflectConfig(this), this.paperDollManager);
+        this.deflectManager = new DeflectManager(this, new DeflectConfig(this), this.paperDollManager,
+                this.sekiroShopManager);
         this.deflectManager.enable();
 
-        // 佛珠（商店消耗品）：单局上限 4 次、每次 +5 最大血量、价格递增
-        this.beadManager = new BeadManager(this, new BeadConfig(this));
+        // 雾璃鸦（反击型忍具）：忍具商店购买绑定末影之眼；掷出激活头顶悬停 2s，
+        // 期间首次受玩家伤害免伤并传送到攻击方身后，悬停结束破碎
+        this.crowManager = new CrowManager(this, new CrowConfig(this), this.paperDollManager,
+                this.sekiroShopManager);
+        this.crowManager.enable();
+
+        // 佛珠（忍具商店递增价购买）：单局上限 4 次、每次 +5 最大血量、价格递增
+        this.beadManager = new BeadManager(this, new BeadConfig(this), this.sekiroShopManager);
         this.beadManager.enable();
 
         // 僵尸头颅 + 恐怖条（独立新机制）
         this.terrorManager = new TerrorManager(this, new TerrorConfig(this), this.paperDollManager, this.deflectManager);
         this.terrorManager.enable();
 
-        // 巴之雷
+        // 巴之雷（忍具商店两级购买）
         this.lightningManager = new LightningManager(this, new LightningConfig(this), stanceManager, duelManager,
-                this.paperDollManager);
+                this.paperDollManager, this.sekiroShopManager);
         this.lightningManager.enable();
 
         // 危攻击 / 识破（独立模块）：主手持矛（突进附魔）疾跑攻击 = 危，不可弹反，
-        // 格挡破盾 + 扣架势，识破（下蹲 170ms 内接危）反击
-        this.dangerManager = new DangerManager(this, new DangerConfig(this), stanceManager, duelManager);
+        // 格挡破盾 + 扣架势，识破（下蹲 170ms 内接危）反击；长矛经忍具商店购买
+        this.dangerManager = new DangerManager(this, new DangerConfig(this), stanceManager, duelManager,
+                this.sekiroShopManager);
         this.dangerManager.enable();
 
         // 普通格挡 / 受击架势（独立模块）：无格挡命中扣受击方架势 Dactual×hit-multiplier；
@@ -215,6 +235,9 @@ public final class SekiroBedwar extends JavaPlugin {
 
     @Override
     public void onDisable() {
+        if (this.sekiroShopManager != null) {
+            this.sekiroShopManager.disable();
+        }
         // 冻结模块先于 DuelManager.disable() 禁用：清空冻结状态，避免关闭时 DuelEndedEvent 误恢复
         if (this.respawnFreezeManager != null) {
             this.respawnFreezeManager.disable();
@@ -239,6 +262,9 @@ public final class SekiroBedwar extends JavaPlugin {
         }
         if (this.dangerManager != null) {
             this.dangerManager.disable();
+        }
+        if (this.crowManager != null) {
+            this.crowManager.disable();
         }
         if (this.deflectManager != null) {
             this.deflectManager.disable();
@@ -388,5 +414,15 @@ public final class SekiroBedwar extends JavaPlugin {
     /** 获取僵尸头颅 / 恐怖条管理器。 */
     public TerrorManager getTerrorManager() {
         return this.terrorManager;
+    }
+
+    /** 获取忍具商店（GUI 宿主）管理器。 */
+    public SekiroShopManager getSekiroShopManager() {
+        return this.sekiroShopManager;
+    }
+
+    /** 获取雾璃鸦管理器。 */
+    public CrowManager getCrowManager() {
+        return this.crowManager;
     }
 }

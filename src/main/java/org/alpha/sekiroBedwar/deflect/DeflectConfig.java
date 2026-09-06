@@ -15,6 +15,8 @@ public final class DeflectConfig {
     private boolean enabled;
     private int paperDollCost;
     private long deflectWindowMs;
+    private String shopCurrency;
+    private int shopAmount;
 
     public DeflectConfig(SekiroBedwar plugin) {
         this.plugin = plugin;
@@ -31,6 +33,8 @@ public final class DeflectConfig {
         this.enabled = yaml.getBoolean("deflect.enabled", true);
         this.paperDollCost = Math.max(1, yaml.getInt("deflect.paper-doll-cost", 2));
         this.deflectWindowMs = Math.max(0L, yaml.getLong("deflect.deflect-window-ms", 2000L));
+        this.shopCurrency = yaml.getString("deflect.shop.currency", "iron");
+        this.shopAmount = Math.max(1, yaml.getInt("deflect.shop.amount", 5));
     }
 
     public boolean enabled() {
@@ -43,5 +47,15 @@ public final class DeflectConfig {
 
     public long deflectWindowMs() {
         return deflectWindowMs;
+    }
+
+    /** 盾牌商店价格货币（BedWars 资源名）。 */
+    public String shopCurrency() {
+        return shopCurrency;
+    }
+
+    /** 盾牌商店价格数量。 */
+    public int shopAmount() {
+        return shopAmount;
     }
 }

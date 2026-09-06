@@ -2,17 +2,20 @@ package org.alpha.sekiroBedwar.deflect;
 
 import org.alpha.sekiroBedwar.SekiroBedwar;
 import org.alpha.sekiroBedwar.paperdoll.PaperDollManager;
+import org.alpha.sekiroBedwar.shop.BuyContext;
+import org.alpha.sekiroBedwar.shop.SekiroShopManager;
+import org.alpha.sekiroBedwar.shop.ShopCurrency;
+import org.alpha.sekiroBedwar.shop.ShopItem;
 import org.bukkit.Bukkit;
 import org.bukkit.Material;
+import org.bukkit.Sound;
 import org.bukkit.entity.Player;
-import org.bukkit.plugin.Plugin;
+import org.bukkit.inventory.ItemStack;
 import org.bukkit.scheduler.BukkitTask;
 
-import java.io.File;
-import java.io.IOException;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -20,10 +23,10 @@ import java.util.UUID;
  * 盾牌弹反（独立模块）：主手举盾消耗纸人 → 举盾后一段时间全部按完美弹反窗口处理 →
  * 窗口结束强制解除举盾。
  *
- * <p><b>触发</b>：主手持盾右键（{@code PlayerInteractEvent}，HAND 槽 + SHIELD）。右键事件
- * 后 <b>1 tick 延迟确认</b>——确认玩家确实处于 {@code isBlocking()}（真举盾）才扣
- * {@code deflect.paper-doll-cost} 纸人并开窗，防止“点了右键但没举成盾”（点容器方块等）误扣；
- * 已处于弹反窗口内再次右键不重复扣费。</p>
+ * <p><b>触发</b>：持盾右键（{@code PlayerInteractEvent} RIGHT_CLICK，主 / 副手任一持盾，
+ * 直接读玩家手持不依赖事件手位字段）→ <b>即时扣 {@code deflect.paper-doll-cost} 纸人并开窗</b>；
+ * 右键容器 / 门等可交互方块不触发（防误开方块白扣）；已处于弹反窗口内再次右键不重复扣费。
+ * 音效反馈（无文字）：成功开窗盾牌格挡声、纸人不足低音提示。</p>
  *
  * <p><b>窗口语义</b>：{@code deflect.deflect-window-ms}（默认 2000ms）内来袭的
  * <b>近战命中一律按完美弹反</b>处理（由 {@code ParryManager} 查询 {@link #isDeflecting}
@@ -41,23 +44,23 @@ import java.util.UUID;
  * 查询 {@link #isDeflecting}），语义不变。</p>
  */
 public final class DeflectManager {
-    private static final String MARKER_START = "# === SekiroBedwar shield START ===";
-    private static final String MARKER_END = "# === SekiroBedwar shield END ===";
-    private static final String SPEED_END = "# === SekiroBedwar sword-speed END ===";
 
     private final SekiroBedwar plugin;
     private final DeflectConfig config;
     private final PaperDollManager paperDollManager;
+    private final SekiroShopManager shop;
     private final DeflectListener listener;
 
     /** 玩家 → 弹反窗口截止时刻（单调毫秒）。窗口结束即移除。 */
     private final Map<UUID, Long> deflectUntil = new HashMap<>();
     private BukkitTask expireTask;
 
-    public DeflectManager(SekiroBedwar plugin, DeflectConfig config, PaperDollManager paperDollManager) {
+    public DeflectManager(SekiroBedwar plugin, DeflectConfig config, PaperDollManager paperDollManager,
+                          SekiroShopManager shop) {
         this.plugin = plugin;
         this.config = config;
         this.paperDollManager = paperDollManager;
+        this.shop = shop;
         this.listener = new DeflectListener(this);
     }
 
@@ -67,7 +70,7 @@ public final class DeflectManager {
         }
         plugin.getServer().getPluginManager().registerEvents(listener, plugin);
         expireTask = plugin.getServer().getScheduler().runTaskTimer(plugin, this::expire, 1L, 1L);
-        injectShop();
+        shop.register(new ShopItem("shield", 60, viewer -> renderShieldItem(), ctx -> buyShield(ctx)));
         plugin.getLogger().info("盾牌弹反已启用：纸人×" + config.paperDollCost()
                 + " 完美弹反窗口=" + config.deflectWindowMs() + "ms（窗口结束强制收盾）");
     }
@@ -91,30 +94,30 @@ public final class DeflectManager {
     }
 
     /**
-     * 主手持盾右键触发（由 {@link DeflectListener} 调用）：1 tick 后确认实际举盾才扣纸人开窗。
-     * 已在窗口内 / 纸人不足 / 未举成盾 → 不扣费、不开窗。
+     * 持盾右键触发（由 {@link DeflectListener} 调用，即时扣费，不做延迟举盾确认）：
+     * 已在窗口内不重复扣；纸人不足仅低音提示（不开窗）；成功开窗 + 盾牌格挡音效。
      */
-    public void requestDeflect(Player player) {
+    public boolean tryStartDeflect(Player player) {
         if (player == null || !player.isOnline()) {
-            return;
+            return false;
         }
-        final UUID uuid = player.getUniqueId();
+        UUID uuid = player.getUniqueId();
         if (isDeflecting(uuid)) {
-            return; // 已在弹反窗口内：不重复扣费（防连点/事件重复触发）
+            return false; // 已在弹反窗口内：不重复扣费（防连点/事件重复触发）
         }
-        Bukkit.getScheduler().runTaskLater(plugin, () -> {
-            Player p = Bukkit.getPlayer(uuid);
-            if (p == null || !p.isOnline() || !p.isBlocking()) {
-                return; // 未真正举盾（误触/被拦截）——不扣费
-            }
-            if (isDeflecting(uuid)) {
-                return; // 延迟期间已有另一窗
-            }
-            if (!paperDollManager.consumePaperDolls(p, config.paperDollCost())) {
-                return; // 纸人不足：静默失败（沉浸原则，无文字提示）
-            }
-            deflectUntil.put(uuid, now() + config.deflectWindowMs());
-        }, 1L);
+        if (!paperDollManager.consumePaperDolls(player, config.paperDollCost())) {
+            player.playSound(player.getLocation(), Sound.ENTITY_VILLAGER_NO, 0.8f, 1.4f);
+            return false; // 纸人不足：仅低音提示（不扣不开窗，无文字）
+        }
+        deflectUntil.put(uuid, now() + config.deflectWindowMs());
+        player.playSound(player.getLocation(), Sound.ITEM_SHIELD_BLOCK, 1.0f, 1.1f);
+        return true;
+    }
+
+    /** 任一手持盾（主手或副手）。 */
+    public static boolean hasShieldInHand(Player player) {
+        return player.getInventory().getItemInMainHand().getType() == Material.SHIELD
+                || player.getInventory().getItemInOffHand().getType() == Material.SHIELD;
     }
 
     /** 周期检测：窗口结束 → 移除记录 + 强制解除举盾（盾牌 1 tick 冷却打断持盾）。 */
@@ -139,54 +142,28 @@ public final class DeflectManager {
         return System.nanoTime() / 1_000_000L;
     }
 
-    /** 幂等注入：把盾牌购买项并入剑攻速类别（sword-speed 块内，END 之前）。 */
-    private void injectShop() {
-        Plugin bw = Bukkit.getPluginManager().getPlugin("ScreamingBedWars");
-        if (bw == null) {
-            plugin.getLogger().info("未找到 ScreamingBedWars，跳过盾牌商店注入");
+    // ============ 忍具商店 GUI（盾牌） ============
+
+    /** 购买入口（GUI 点击路由）：扣费 → 发普通盾牌（价格配置化 deflect.shop）。 */
+    public void buyShield(BuyContext ctx) {
+        Player player = ctx.player();
+        if (player == null || !ctx.bwPlayer().isInGame()) {
             return;
         }
-        File shopFile = new File(bw.getDataFolder(), "shop" + File.separator + "shop.yml");
-        if (!shopFile.isFile()) {
+        if (!ShopCurrency.deduct(player, ShopCurrency.of(config.shopCurrency()), config.shopAmount())) {
+            player.sendMessage("§c购买失败：货币不足！");
             return;
         }
-        try {
-            String content = new String(Files.readAllBytes(shopFile.toPath()), StandardCharsets.UTF_8);
-            content = removeBlock(content);
-            int speedEnd = content.indexOf(SPEED_END);
-            if (speedEnd < 0) {
-                plugin.getLogger().warning("未找到剑攻速商店块，跳过盾牌注入");
-                return;
-            }
-            String block = buildBlock();
-            content = content.substring(0, speedEnd) + block + content.substring(speedEnd);
-            Files.write(shopFile.toPath(), content.getBytes(StandardCharsets.UTF_8));
-            plugin.getLogger().info("已注入盾牌商店物品: " + shopFile.getAbsolutePath());
-        } catch (IOException ex) {
-            plugin.getLogger().warning("盾牌商店注入失败: " + ex.getMessage());
-        }
+        player.getInventory().addItem(new ItemStack(Material.SHIELD));
+        player.sendMessage("§a已购得盾牌！");
     }
 
-    private String removeBlock(String content) {
-        int start = content.indexOf(MARKER_START);
-        if (start < 0) {
-            return content;
-        }
-        int end = content.indexOf(MARKER_END, start);
-        if (end < 0) {
-            return content;
-        }
-        int endLine = content.indexOf('\n', end);
-        endLine = endLine < 0 ? content.length() : endLine + 1;
-        return content.substring(0, start) + content.substring(endLine);
-    }
-
-    private String buildBlock() {
-        return MARKER_START + "\n"
-                + "  - price: 5 of iron\n"
-                + "    stack:\n"
-                + "      type: shield\n"
-                + "      display-name: \"盾牌\"\n"
-                + MARKER_END + "\n";
+    /** 渲染：用途 + 价格。 */
+    private ItemStack renderShieldItem() {
+        List<String> lore = new ArrayList<>();
+        lore.add("§7主手持盾右键：消耗 " + config.paperDollCost() + " 纸人");
+        lore.add("§7举盾后 " + (config.deflectWindowMs() / 1000) + "s 内近战全部完美弹反");
+        lore.add(ShopCurrency.priceLore(config.shopCurrency(), config.shopAmount()));
+        return SekiroShopManager.icon(Material.SHIELD, "§f盾牌", lore);
     }
 }

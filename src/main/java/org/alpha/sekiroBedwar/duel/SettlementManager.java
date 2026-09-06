@@ -44,7 +44,10 @@ import java.util.concurrent.ConcurrentMap;
  * 其余结束原因（退出 / 离局 / 对局结束 / 手动 / 插件禁用）不结算，只清理快照。</p>
  *
  * <p>结算资源类型与架势最大架势共用 {@code stance.max-stance.resources} 映射
- * （铁 / 金 / 钻石 / 绿宝石，可配置增改），只转移这些类型的物品，不触碰其余物品。</p>
+ * （铁 / 金 / 钻石 / 绿宝石，可配置增改），只转移这些类型的物品。</p>
+ *
+ * <p><b>死亡不掉落</b>：任何玩家死亡在结算提取后清空整个掉落列表——需要转移的资源已直接
+ * 放入对方背包，其余物品（含未转移的剩余份额、胜者背包装不下的溢出）一律清除不落地。</p>
  *
  * <p><b>线程安全</b>：监听器与周期任务都在 Bukkit 主线程执行；写操作经 {@link #ensureMainThread} 守卫，
  * 快照容器用 {@link ConcurrentHashMap} 保证读安全。</p>
@@ -96,45 +99,52 @@ public final class SettlementManager {
 
     /**
      * 玩家死亡（由 {@link SettlementListener} 在 HIGHEST 优先级调用，先于掉落 / 观战流程）。
-     * 死者处于决斗且死亡为虚空坠落 / 被对方击杀 → 按对应比例结算并结束决斗。
-     * 虚空与击杀两条分支互斥，同一死亡事件只结算一次，不会与 Bukkit 原版流程重复结算。
+     * 死者处于决斗且死亡为虚空坠落 / 被对方击杀 → 按对应比例结算并结束决斗；
+     * 非决斗被玩家击杀 → 全额转移给击杀者。虚空与击杀两条分支互斥，同一死亡事件只结算一次。
+     * <b>无论走哪条分支，最后清空整个掉落列表</b>（死亡不掉落：转移部分已在对方背包，
+     * 其余物品与剩余份额一律清除不落地；第三方击杀等未匹配结算的死亡同样清空，
+     * 决斗第三方回滚会按快照把资源补回）。
      */
     public void onPlayerDeath(PlayerDeathEvent event) {
-        Player victim = event.getEntity();
-        if (victim == null) {
-            return;
-        }
-        Duel duel = duelManager.getDuel(victim.getUniqueId()).orElse(null);
-        if (duel == null) {
-            // 非决斗死亡：被玩家击杀 → 全部资源（铁金钻绿）转移给击杀者；其余由 BedWars 清除不掉落。
-            Player killer = victim.getKiller();
-            if (killer != null && !killer.equals(victim)) {
-                settleFromDrops(event, victim, killer, 1.0);
+        try {
+            Player victim = event.getEntity();
+            if (victim == null) {
+                return;
             }
-            return;
-        }
-        DuelState state = duel.getState();
-        if (state != DuelState.PENDING && state != DuelState.ACTIVE) {
-            return;
-        }
-        Player opponent = opponentOf(duel, victim.getUniqueId());
-        if (opponent == null || !opponent.isOnline()) {
-            return;
-        }
-        // 虚空死亡（被击落虚空 = 决斗死亡）：按虚空比例结算并记录胜者。
-        // 死亡瞬间死者背包已被清空（物品全部移入 event.getDrops()），故从掉落列表结算。
-        if (isVoidDeath(victim)) {
-            settleFromDrops(event, victim, opponent, settlementConfig.voidKillRatio());
-            duelManager.endDuel(duel, EndReason.VOID_DEATH);
-            return;
-        }
-        if (isKilledBy(victim, opponent)) {
-            // 崩条内被杀（处决）→ 崩条比例；未崩条被击杀 → 普通比例
-            double ratio = stanceManager.isBroken(victim.getUniqueId())
-                    ? settlementConfig.breakKillRatio()
-                    : settlementConfig.normalKillRatio();
-            settleFromDrops(event, victim, opponent, ratio);
-            duelManager.endDuel(duel, EndReason.EXECUTED);
+            Duel duel = duelManager.getDuel(victim.getUniqueId()).orElse(null);
+            if (duel == null) {
+                // 非决斗死亡：被玩家击杀 → 全部资源（铁金钻绿）直接进击杀者背包
+                Player killer = victim.getKiller();
+                if (killer != null && !killer.equals(victim)) {
+                    settleFromDrops(event, victim, killer, 1.0);
+                }
+                return;
+            }
+            DuelState state = duel.getState();
+            if (state != DuelState.PENDING && state != DuelState.ACTIVE) {
+                return;
+            }
+            Player opponent = opponentOf(duel, victim.getUniqueId());
+            if (opponent == null || !opponent.isOnline()) {
+                return;
+            }
+            // 虚空死亡（被击落虚空 = 决斗死亡）：按虚空比例结算并记录胜者。
+            // 死亡瞬间死者背包已被清空（物品全部移入 event.getDrops()），故从掉落列表结算。
+            if (isVoidDeath(victim)) {
+                settleFromDrops(event, victim, opponent, settlementConfig.voidKillRatio());
+                duelManager.endDuel(duel, EndReason.VOID_DEATH);
+                return;
+            }
+            if (isKilledBy(victim, opponent)) {
+                // 崩条内被杀（处决）→ 崩条比例；未崩条被击杀 → 普通比例
+                double ratio = stanceManager.isBroken(victim.getUniqueId())
+                        ? settlementConfig.breakKillRatio()
+                        : settlementConfig.normalKillRatio();
+                settleFromDrops(event, victim, opponent, ratio);
+                duelManager.endDuel(duel, EndReason.EXECUTED);
+            }
+        } finally {
+            event.getDrops().clear(); // 死亡不掉落：一切物品清除，不落地
         }
     }
 
@@ -349,8 +359,8 @@ public final class SettlementManager {
      * 从死亡掉落列表按比例结算：死亡瞬间死者背包已被清空、物品全部移入
      * {@link PlayerDeathEvent#getDrops()}（此监听在 HIGHEST 优先级，先于掉落执行，
      * 背包此刻为空），因此直接在掉落列表上转移配置资源给胜者，而非读空背包。
-     * 转移后剩余部分保留在掉落列表随原版掉落；{@code to} 背包满装不下的部分也放回
-     * 掉落列表（资源仍归地面掉落，不吞没）。
+     * 转移部分直接进胜者背包；剩余份额与胜者背包装不下的溢出都不再落地
+     * （调用方随后清空整个掉落列表 = 死亡不掉落）。
      */
     private void settleFromDrops(PlayerDeathEvent event, Player from, Player to, double ratio) {
         if (from == null || to == null || !from.isOnline() || !to.isOnline()) {
@@ -358,7 +368,6 @@ public final class SettlementManager {
         }
         Set<Material> resources = config.resourceCoefficients().keySet();
         List<ItemStack> drops = event.getDrops();
-        List<ItemStack> overflow = new ArrayList<>();
         for (ListIterator<ItemStack> it = drops.listIterator(); it.hasNext(); ) {
             ItemStack item = it.next();
             if (item == null || !resources.contains(item.getType())) {
@@ -379,9 +388,8 @@ public final class SettlementManager {
             } else {
                 it.remove();
             }
-            overflow.addAll(to.getInventory().addItem(give).values());
+            to.getInventory().addItem(give); // 装不下的溢出随掉落列表一并清除
         }
-        drops.addAll(overflow);
     }
 
     /** 写操作必须位于 Bukkit 主线程（快速失败，防止异步线程篡改状态）。 */

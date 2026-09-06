@@ -39,7 +39,7 @@ public final class BeadConfig {
         this.basePrice = Math.max(1, yaml.getInt("bead.base-price", 4));
         this.priceIncrement = Math.max(0, yaml.getInt("bead.price-increment", 2));
         this.currency = yaml.getString("bead.currency", "diamond");
-        this.material = parseMaterial(yaml.getString("bead.material", "ENDER_EYE"));
+        this.material = parseMaterial(yaml.getString("bead.material", "ENDER_PEARL"));
         this.name = yaml.getString("bead.name", "佛珠");
     }
 
@@ -47,7 +47,7 @@ public final class BeadConfig {
         try {
             return Material.valueOf(name.trim().toUpperCase());
         } catch (IllegalArgumentException | NullPointerException ignored) {
-            return Material.ENDER_EYE;
+            return Material.ENDER_PEARL;
         }
     }
 

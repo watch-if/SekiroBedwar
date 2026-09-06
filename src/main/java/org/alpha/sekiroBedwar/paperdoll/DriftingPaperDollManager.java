@@ -1,8 +1,10 @@
 package org.alpha.sekiroBedwar.paperdoll;
 
 import org.alpha.sekiroBedwar.SekiroBedwar;
-import org.bukkit.Bukkit;
-import org.bukkit.ChatColor;
+import org.alpha.sekiroBedwar.shop.BuyContext;
+import org.alpha.sekiroBedwar.shop.SekiroShopManager;
+import org.alpha.sekiroBedwar.shop.ShopCurrency;
+import org.alpha.sekiroBedwar.shop.ShopItem;
 import org.bukkit.Material;
 import org.bukkit.NamespacedKey;
 import org.bukkit.attribute.Attribute;
@@ -12,37 +14,30 @@ import org.bukkit.event.entity.PlayerDeathEvent;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.persistence.PersistentDataType;
-import org.bukkit.plugin.Plugin;
-import org.screamingsandals.bedwars.api.events.StorePrePurchaseEvent;
-import org.screamingsandals.bedwars.api.player.BWPlayer;
-import org.screamingsandals.bedwars.api.types.server.ItemStackHolder;
 
-import java.io.File;
-import java.io.IOException;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.util.Map;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
 
 /**
  * 漂流纸人管理器：消耗品，右键血量减半换 5 纸人（可超上限），效果死亡复位。
+ * 经忍具商店 GUI 购买。
  */
 public final class DriftingPaperDollManager {
-    private static final String MARKER_START = "# === SekiroBedwar drifting-paper-doll START ===";
-    private static final String MARKER_END = "# === SekiroBedwar drifting-paper-doll END ===";
-    private static final String SPEED_END = "# === SekiroBedwar sword-speed END ===";
 
     private final SekiroBedwar plugin;
     private final PaperDollConfig config;
     private final PaperDollManager paperDollManager;
+    private final SekiroShopManager shop;
     private final NamespacedKey ownerKey;
     private final DriftingPaperDollListener listener;
 
     public DriftingPaperDollManager(SekiroBedwar plugin, PaperDollConfig config,
-                                    PaperDollManager paperDollManager) {
+                                    PaperDollManager paperDollManager, SekiroShopManager shop) {
         this.plugin = plugin;
         this.config = config;
         this.paperDollManager = paperDollManager;
+        this.shop = shop;
         this.ownerKey = new NamespacedKey(plugin, "drifting_paper_doll");
         this.listener = new DriftingPaperDollListener(this);
     }
@@ -52,10 +47,9 @@ public final class DriftingPaperDollManager {
             return;
         }
         plugin.getServer().getPluginManager().registerEvents(listener, plugin);
-        StorePrePurchaseEvent.handle(plugin, this::handlePrePurchase);
-        injectShop();
+        shop.register(new ShopItem("drifting-paper-doll", 41, this::renderItem, this::buy));
         plugin.getLogger().info("漂流纸人已启用：价格=" + config.driftingPriceAmount()
-                + " " + config.driftingPriceCurrency() + " 上限=" + config.driftingMaxHold());
+                + " " + config.driftingPriceCurrency() + " 上限=" + config.driftingMaxHold() + "（忍具商店 GUI 购买）");
     }
 
     public void disable() {
@@ -167,116 +161,39 @@ public final class DriftingPaperDollManager {
         event.getDrops().removeIf(this::isDriftingPaperDoll);
     }
 
-    // ============ 商店 ============
+    // ============ 忍具商店 GUI ============
 
-    private void handlePrePurchase(StorePrePurchaseEvent ev) {
-        BWPlayer bw = ev.getPlayer();
-        Player player = Bukkit.getPlayer(bw.getUuid());
-        if (player == null || !bw.isInGame()) {
+    /** 购买入口（GUI 点击路由）：持有上限 → 扣费 → 发绑定漂流纸人。 */
+    public void buy(BuyContext ctx) {
+        Player player = ctx.player();
+        if (player == null || !ctx.bwPlayer().isInGame()) {
             return;
         }
-        ItemStackHolder holder = ev.getNewItem();
-        if (holder == null) {
-            return;
-        }
-        ItemStack bought;
-        try {
-            bought = holder.as(ItemStack.class);
-        } catch (RuntimeException ex) {
-            plugin.getLogger().warning("读取漂流纸人购买物品失败: " + ex.getMessage());
-            return;
-        }
-        if (bought == null || bought.getType() != config.driftingMaterial()) {
-            return;
-        }
-        String name = bought.hasItemMeta() && bought.getItemMeta().hasDisplayName()
-                ? ChatColor.stripColor(bought.getItemMeta().getDisplayName()) : "";
-        if (!name.contains(config.driftingName())) {
-            return;
-        }
-        ev.setCancelled(true);
         if (countDrifting(player) >= config.driftingMaxHold()) {
             player.sendMessage("§c漂流纸人已达上限（" + config.driftingMaxHold() + "）！");
             return;
         }
-        if (!deduct(player, ev.getMaterialItem())) {
+        if (!ShopCurrency.deduct(player, ShopCurrency.of(config.driftingPriceCurrency()),
+                config.driftingPriceAmount())) {
             player.sendMessage("§c购买失败：货币不足！");
             return;
         }
         player.getInventory().addItem(makeDriftingPaperDoll(player));
     }
 
-    private boolean deduct(Player player, ItemStackHolder costHolder) {
-        if (costHolder == null) {
-            return false;
-        }
-        ItemStack cost = costHolder.as(ItemStack.class);
-        if (cost == null || cost.getType() == Material.AIR) {
-            return false;
-        }
-        Map<Integer, ItemStack> leftover = player.getInventory().removeItem(cost);
-        return leftover.isEmpty();
-    }
-
-    /** 幂等注入：把漂流纸人购买项并入剑攻速类别（sword-speed 块内，END 之前）。 */
-    private void injectShop() {
-        Plugin bw = Bukkit.getPluginManager().getPlugin("ScreamingBedWars");
-        if (bw == null) {
-            plugin.getLogger().info("未找到 ScreamingBedWars，跳过漂流纸人商店注入");
-            return;
-        }
-        File shopFile = new File(bw.getDataFolder(), "shop" + File.separator + "shop.yml");
-        if (!shopFile.isFile()) {
-            plugin.getLogger().info("未找到商店文件 " + shopFile.getAbsolutePath() + "，跳过注入");
-            return;
-        }
-        try {
-            String content = new String(Files.readAllBytes(shopFile.toPath()), StandardCharsets.UTF_8);
-            content = removeBlock(content);
-            int speedEnd = content.indexOf(SPEED_END);
-            if (speedEnd < 0) {
-                plugin.getLogger().warning("未找到剑攻速商店块，跳过漂流纸人注入");
-                return;
+    /** 动态渲染：用法 + 价格 + 持有数。 */
+    private ItemStack renderItem(Player viewer) {
+        List<String> lore = new ArrayList<>();
+        lore.add("§7血量>50%时右键：上限减半，得 " + config.driftingPaperDollsGranted() + " 纸人");
+        lore.add(ShopCurrency.priceLore(config.driftingPriceCurrency(), config.driftingPriceAmount()));
+        if (viewer != null) {
+            int held = countDrifting(viewer);
+            lore.add("§7持有: " + held + "/" + config.driftingMaxHold());
+            if (held >= config.driftingMaxHold()) {
+                lore.add("§c已达上限");
             }
-            String block = buildBlock();
-            content = content.substring(0, speedEnd) + block + content.substring(speedEnd);
-            Files.write(shopFile.toPath(), content.getBytes(StandardCharsets.UTF_8));
-            plugin.getLogger().info("已注入漂流纸人商店物品（并入剑攻速类别）: " + shopFile.getAbsolutePath());
-        } catch (IOException ex) {
-            plugin.getLogger().warning("漂流纸人商店注入失败: " + ex.getMessage());
         }
-    }
-
-    private String removeBlock(String content) {
-        int start = content.indexOf(MARKER_START);
-        if (start < 0) {
-            return content;
-        }
-        int end = content.indexOf(MARKER_END, start);
-        if (end < 0) {
-            return content;
-        }
-        int endLine = content.indexOf('\n', end);
-        endLine = endLine < 0 ? content.length() : endLine + 1;
-        return content.substring(0, start) + content.substring(endLine);
-    }
-
-    private String buildBlock() {
-        StringBuilder sb = new StringBuilder();
-        sb.append(MARKER_START).append('\n');
-        sb.append("  - price: ").append(config.driftingPriceAmount()).append(" of ")
-                .append(config.driftingPriceCurrency()).append('\n');
-        sb.append("    stack:\n");
-        sb.append("      type: ").append(config.driftingMaterial().name().toLowerCase()).append('\n');
-        sb.append("      display-name: \"").append(yamlEscape(config.driftingName())).append("\"\n");
-        sb.append("      lore:\n");
-        sb.append("        - \"").append(yamlEscape("血量>50%时右键：上限减半，得 5 纸人")).append("\"\n");
-        sb.append(MARKER_END).append('\n');
-        return sb.toString();
-    }
-
-    private static String yamlEscape(String s) {
-        return s.replace("\\", "\\\\").replace("\"", "\\\"");
+        return SekiroShopManager.icon(config.driftingMaterial(), "§f" + config.driftingName(), lore);
     }
 
     @SuppressWarnings("removal")

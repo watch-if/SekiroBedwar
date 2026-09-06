@@ -1,6 +1,7 @@
 # ============ SekiroWar 决斗系统配置（duel.yml） ============
 # 白色内圈 = visuals.inner-radius（与 DuelVisualizer 白圈同半径），冻结 / 区域限制 / 复活冻结共用。
-# 改动需重启服务器生效（sword-speed 的商店注入在启动时执行一次）。
+# 改动需重启服务器生效（忍具商店对 shop.yml 注入块的清理在启动时执行一次；
+# 商店入口为运行时接管，随开随现）。
 
 # ============ 一、战斗核心 ============
 
@@ -197,6 +198,8 @@ block:
 #   2. 普通死亡（未崩条被对方击杀）：全额转移
 #   3. 虚空死亡（被击落虚空 = 决斗死亡）：视同普通击杀，全额转移
 #   4. 第三方介入结束决斗：不转移，双方资源回滚到决斗开始状态
+# 死亡不掉落：需要转移的资源直接放入对方背包；其余一切物品（含未转移的剩余份额、
+# 背包溢出）从掉落列表整体清除，不落地。非决斗被玩家击杀 = 全额转移（比例 1.0）。
 settlement:
   break-kill-ratio: 0.5
   normal-kill-ratio: 1.0
@@ -250,7 +253,7 @@ visuals:
   refresh-ticks: 5
   # 是否用 GLOWING（光箭矢效果）高亮：双方决斗玩家全程高亮（直到决斗结束）；
   # 第三方跨入红圈时用其队伍颜色高亮标记（见下方 third-party-highlight-ticks）。
-  # 注意：圆心与双圈粒子在触发时锁定，持续到决斗结束（不再按 duration 自动消失）。
+  # 注意：圆心与双圈粒子在触发时锁定，持续到决斗结束（由 clearDuel / clearAll 移除）。
   glow: true
   # 第三方跨入红圈（岛屿半径 + 外圆半径 排除范围）后的高亮标记时长（tick；20 = 1 秒）
   third-party-highlight-ticks: 20
@@ -312,10 +315,10 @@ freeze:
     enabled: true
 
 # ---------- 剑攻速强化（SpeedManager，独立模块） ----------
-# 商店可购买的等级化强化（逐级购买 Lv.1→Lv.2→Lv.3，不可跳级）：购买后给玩家实体加
-# ATTACK_SPEED 修正（ADD_NUMBER），降低本人所有近战武器（剑/斧）的攻击冷却。
+# 忍具商店 GUI 单按钮逐级购买（按钮显示下一级，买后自动更新；Lv.1→Lv.2→Lv.3 不可跳级）：
+# 购买后给玩家实体加 ATTACK_SPEED 修正（ADD_NUMBER），降低本人所有近战武器（剑/斧）的攻击冷却。
 sword-speed:
-  # 是否启用（false 时不注入商店、不拦截购买）
+  # 是否启用（false 时不登记忍具商店条目）
   enabled: true
   # 最大强化等级（也决定商店生成的物品数量；不能超过下方 prices 条数，多的自动截断）
   max-level: 3
@@ -326,13 +329,14 @@ sword-speed:
   max-attack-speed: 4.0
   # 近战基础攻速（默认=剑 1.6；斧为 1.0），用于计算强化上限
   melee-base-attack-speed: 1.6
-  # 商店类别图标（material 也用作品 marker 物品类型，需非堆叠以阻止 shift 连点多扣）
+  # 忍具商店 GUI 中攻速条目的图标材质
   category:
     material: DIAMOND_SWORD
     name: "剑攻速强化"
     lore:
       - "永久提升你的近战攻击速度（本局）"
-  # 每个等级的购买价格（条数 = 有效最大等级；currency 用 BedWars 资源名 bronze/iron/gold/diamond/emerald）
+  # 每个等级的购买价格（条数 = 有效最大等级；currency 用 BedWars 资源名 bronze/iron/gold/diamond/emerald；
+  # 在忍具商店 GUI 内扣费，按 Material 遍历扣、不受资源自定义显示名影响）
   # 逐级购买：只能买「当前等级 +1」，跳级点击被拦截（不扣费）
   prices:
     - currency: iron
@@ -353,7 +357,7 @@ sword-blocking:
   scan-ticks: 10
 
 # ---------- 巴之雷（LightningManager，独立模块） ----------
-# 商店两级购买：L1 只获得「三连击接跳斩落雷」效果；L2 附赠忠诚三叉戟（含 L1 效果），
+# 忍具商店两级购买：L1 只获得「三连击接跳斩落雷」效果；L2 附赠忠诚三叉戟（含 L1 效果），
 # 且三叉戟远程命中可衔接落雷。购买依次进行、不可跳级。
 lightning:
   # 是否启用
@@ -381,7 +385,7 @@ lightning:
     heal-hp-wood: 4.0
     return-multiplier: 3.5
     return-multiplier-wood: 3.0
-  # 商店（L1 diamond / L2 emerald + 忠诚三叉戟）
+  # 忍具商店条目（L1 diamond / L2 emerald + 忠诚三叉戟；false = 不登记进忍具商店 GUI）
   shop:
     enabled: true
     category-material: TRIDENT
@@ -432,21 +436,25 @@ paper-doll:
     paper-dolls-granted: 5
 
 # ---------- 盾牌弹反（DeflectManager，独立机制） ----------
-# 主手持盾右键 → 1 tick 后确认【确实举盾】才扣 paper-doll-cost 纸人（防误触/连点重复扣）
+# 持盾右键（主/副手任一，直接读手持不依赖事件手位字段）→ 即时扣 paper-doll-cost 纸人开窗；
+# 右键容器/门等可交互方块不触发（防误开白扣）。成功=盾牌格挡音效，纸人不足=低音提示（均无文字）
 # → 举盾后 deflect-window-ms（默认 2s）内全部按【完美弹反窗口】处理：来袭的每一记近战命中
 #   都完整弹开（免伤免击退 + 攻击方重创架势，与完美弹反完全一致），不受「举盾后 170ms」
 #   窗口与「一次按住只弹反一击」限制——整个窗口每一击都弹反（这就是纸人的开销）。
-#   危攻击依然不可弹反；弓箭不参与（与完美弹反口径一致）；受击状态（无法格挡）期间不生效；
+#   危攻击不可弹反；弓箭不参与；受击状态（无法格挡）期间不生效；
 #   弹反范围沿用完美弹反口径——仅 ACTIVE 决斗内对手的 melee 命中会被弹开。
 # → 窗口结束【强制解除举盾】（盾牌 1 tick 冷却打断持盾；可再右键举盾再付纸人开新窗）。
-# 窗口内玩家免疫僵尸头颅恐怖区负面（同前）。已处弹反窗口时再次右键不重复扣费；
-# 纸人不足静默失败（不扣不开窗，无文字提示）。
+# 窗口内玩家免疫僵尸头颅恐怖区负面。已处弹反窗口时再次右键不重复扣费。
 deflect:
   enabled: true
   paper-doll-cost: 2
   deflect-window-ms: 2000
+  # 盾牌价格（忍具商店 GUI 购买）
+  shop:
+    currency: iron
+    amount: 5
 
-# ---------- 危攻击 / 识破（DangerManager，独立新机制） ----------
+# ---------- 危攻击 / 识破（DangerManager，独立机制） ----------
 # 主手持矛（任一等级）+ 突进（LUNGE）附魔 + 疾跑攻击 = 危攻击：
 # 不可被完美弹反；格挡 → 破盾 + 扣防守方架势；识破（下蹲后 mikiri-window-ms 内接危）
 # → 免疫危伤害 + 反扣攻击方架势。
@@ -455,9 +463,14 @@ danger:
   stance-penalty: 15.0
   mikiri-window-ms: 170
   shield-break-seconds: 1.0
+  # 下界合金长矛价格（忍具商店 GUI 购买）
+  shop:
+    currency: diamond
+    amount: 1
 
-# ---------- 佛珠（BeadManager，商店消耗品） ----------
-# 单局购买上限 4 次，每次 +5 最大血量（全局增益，死后重生恢复）；价格 4→6→8→10 钻递增。
+# ---------- 佛珠（BeadManager，忍具商店消耗品） ----------
+# 单局购买上限 4 次，每次 +5 最大血量（全局增益，死后重生恢复）；价格 4→6→8→10 钻递增
+# （递增价在忍具商店 GUI 实时渲染）；图标末影珍珠。
 bead:
   enabled: true
   max-purchases: 4
@@ -465,10 +478,32 @@ bead:
   base-price: 4
   price-increment: 2
   currency: diamond
-  material: ENDER_EYE
+  material: ENDER_PEARL
   name: "佛珠"
 
-# ---------- 僵尸头颅 / 恐怖条（TerrorManager，独立新机制） ----------
+# ---------- 雾璃鸦（CrowManager，反击型忍具） ----------
+# 忍具商店购买（图标/物品 = 末影之眼，绑定玩家，不可丢弃/入容器；每人每局限购
+# max-per-player 只——按购买计数判定、不检测背包，默认 1）。右键激活（拦截原版投掷，
+# 眼不飞出）：消耗 1 雾璃鸦 +
+# paper-doll-cost 纸人 → 一只末影之眼悬停头顶 hover-ms（默认 2s，破碎概率 100%，判定未碎返还
+# 一只）。悬停期间受到的第一次玩家来源伤害（近战或投射物）：伤害取消（不扣血）→ 传送到攻击方
+# 身后安全方块 → 雾璃鸦破碎；到时未受击同样破碎并失去免伤效果。成功/失败均有音效无文字。
+# 激活消耗或死亡失去后，refill-delay-seconds（默认 10s）自动向背包补发一只（拾取音效）。
+crow:
+  enabled: true
+  material: ENDER_EYE
+  name: "雾璃鸦"
+  price-currency: gold
+  price-amount: 20
+  paper-doll-cost: 2
+  hover-ms: 2000
+  shatter-chance: 1.0
+  # 每人每局购买上限（计数判定；配合自动补给买一次即可长期持有）
+  max-per-player: 1
+  # 激活消耗（或死亡失去）后自动补发一只的冷却秒数（0 = 关闭补给）
+  refill-delay-seconds: 10
+
+# ---------- 僵尸头颅 / 恐怖条（TerrorManager，独立机制） ----------
 # 击杀玩家 50% 掉僵尸头颅；左键使用（耗 3 纸人 + 1 头颅）→ 半径 3 内 2s 反胃 + 1HP/s + 恐怖累积。
 # 恐怖条 F∈[0,100] 后台记录、不展示，满 100 瞬秒；无维持态时 -10/s 衰减。
 terror:
@@ -495,3 +530,24 @@ islands: {}
   #    center-x: 0.0
   #    center-z: 0.0
   #    radius: 30
+
+# ============ 五、忍具商店（SekiroShopManager） ============
+# 全部插件商品（剑攻速 / 巴之雷 / 下界合金长矛 / 纸人 / 漂流纸人 / 雾璃鸦 / 佛珠 / 盾牌）
+# 的购买判定、扣费、发放都在本插件自管的 GUI 内完成，动态价格实时显示与校验。
+# 入口（接管模式）：玩家右键商店老板打开商店后，主页【右下角槽位】（inventory size-1）被
+# 放置为忍具商店入口物品（带 PDC 标记，5 tick 巡检维持，重渲染后自动补回），
+# 点击即切换到本插件 GUI。分类子页的原生翻页 / 返回按钮不受影响（只接管主页）。
+shop:
+  # 是否启用（false = 入口消失、GUI 无法打开；启动时仍会清理 shop.yml 的插件注入块）
+  enabled: true
+  # true = 接管商店主页右下角槽位作为入口（不写 shop.yml）
+  # false = 入口为向 shop.yml 注入的免费入口物品（改动需重启生效）
+  page-forward-takeover: true
+  # 入口物品（两种模式共用；接管模式下即右下角槽位的替换物品）
+  entry:
+    material: WRITABLE_BOOK
+    name: "只狼忍具"
+    lore:
+      - "忍具与强化，尽在掌握"
+  # GUI 标题（& 为颜色码前缀）
+  gui-title: "&8只狼忍具"
