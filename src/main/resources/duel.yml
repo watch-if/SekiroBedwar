@@ -357,8 +357,9 @@ sword-blocking:
   scan-ticks: 10
 
 # ---------- 巴之雷（LightningManager，独立模块） ----------
-# 忍具商店两级购买：L1 只获得「三连击接跳斩落雷」效果；L2 附赠忠诚三叉戟（含 L1 效果），
+# 忍具商店两级购买（单按钮逐级，依次购买、不可跳级）：L1 只获得「三连击接跳斩落雷」效果；L2 附赠忠诚三叉戟（含 L1 效果），
 # 且三叉戟远程命中可衔接落雷。购买依次进行、不可跳级。
+# 与锈丸 / 炎上【三选一专精】：购买任一系后其余两系封锁，可用「还原」清空重选（互斥统一由 AttributeManager 判定）。
 lightning:
   # 是否启用
   enabled: true
@@ -394,6 +395,57 @@ lightning:
     level-1-amount: 1
     level-2-currency: emerald
     level-2-amount: 1
+
+# ---------- 锈丸（AttributeManager，属性伤害：中毒） ----------
+# 与巴之雷 / 炎上【三选一专精】（买任一系后其余两系封锁，「还原」可清空重选）；单按钮逐级 Lv.1→Lv.2。
+# 触发口径同巴之雷三连击：连续 required-hits 次近战未被对方完美弹反（间隔 ≤ max-interval-ms，
+# 被完美弹反清零）→ 开启 window-ms（默认 5s）属性窗口，窗口内每一记未被弹反的命中为对方
+# 叠中毒并续窗：
+#   Lv.1（30 金）：中毒 I，每次命中 +poison-duration-seconds（10s）
+#   Lv.2（34 金）：升级为中毒 II + 凋零（凋零每次命中 +wither-duration-seconds）
+rust:
+  enabled: true
+  name: "锈丸"
+  icon: SPIDER_EYE   # 原版无蜘蛛头颅，图标用蜘蛛眼
+  lv1-currency: gold
+  lv1-amount: 30
+  lv2-currency: gold
+  lv2-amount: 34
+  required-hits: 3
+  max-interval-ms: 1500
+  window-ms: 5000
+  poison-duration-seconds: 10
+  wither-duration-seconds: 10
+
+# ---------- 炎上（AttributeManager，属性伤害：火焰） ----------
+# 三选一专精同锈丸，触发结构相同（连续未弹反命中 → 5s 窗口）；效果：
+#   Lv.1（30 金）：窗口内未被弹反的命中给对方火焰附加（+fire-ticks 刻燃烧，默认 4s，命中续窗）
+#   Lv.2（34 金）：窗口内在火焰附加基础上【同时叠加凋零】；非窗口期未被弹反的命中
+#                  有 out-of-window-chance（30%）概率直接点燃对方
+burn:
+  enabled: true
+  name: "炎上"
+  icon: FIRE_CHARGE   # 火方块不可作为物品，图标用火焰弹
+  lv1-currency: gold
+  lv1-amount: 30
+  lv2-currency: gold
+  lv2-amount: 34
+  required-hits: 3
+  max-interval-ms: 1500
+  window-ms: 5000
+  fire-ticks: 80
+  out-of-window-chance: 0.3
+  wither-duration-seconds: 10
+
+# ---------- 还原（AttributeManager，重置三选一） ----------
+# 购买后清空巴之雷 / 锈丸 / 炎上的等级与计数（并收回巴之雷 L2 三叉戟），可重新三选一；
+# 仅当已购买升级过任意一系时才可购买，否则按钮提示不可购。
+restore:
+  enabled: true
+  name: "还原"
+  icon: BARRIER
+  price-currency: gold
+  price-amount: 20
 
 # ---------- 纸人（PaperDollManager，独立模块） ----------
 # 忍具系统的铺垫资源。
@@ -532,8 +584,9 @@ islands: {}
   #    radius: 30
 
 # ============ 五、忍具商店（SekiroShopManager） ============
-# 全部插件商品（剑攻速 / 巴之雷 / 下界合金长矛 / 纸人 / 漂流纸人 / 雾璃鸦 / 佛珠 / 盾牌）
-# 的购买判定、扣费、发放都在本插件自管的 GUI 内完成，动态价格实时显示与校验。
+# 全部插件商品（剑攻速 / 巴之雷 / 锈丸 / 炎上 / 还原 / 下界合金长矛 / 纸人 / 漂流纸人 / 雾璃鸦 /
+# 佛珠 / 盾牌）的购买判定、扣费、发放都在本插件自管的 GUI 内完成，动态价格实时显示与校验；
+# 属性三系（巴之雷/锈丸/炎上）与其「还原」在商店中相邻排列（order 20-23）。
 # 入口（接管模式）：玩家右键商店老板打开商店后，主页【右下角槽位】（inventory size-1）被
 # 放置为忍具商店入口物品（带 PDC 标记，5 tick 巡检维持，重渲染后自动补回），
 # 点击即切换到本插件 GUI。分类子页的原生翻页 / 返回按钮不受影响（只接管主页）。
@@ -548,6 +601,12 @@ shop:
     material: WRITABLE_BOOK
     name: "只狼忍具"
     lore:
-      - "忍具与强化，尽在掌握"
+      - "忍具与强化"
   # GUI 标题（& 为颜色码前缀）
   gui-title: "&8只狼忍具"
+  # GUI 右下角「返回 BedWars 商店」按钮（点击重新打开默认商店）
+  back-button:
+    icon: ARROW
+    name: "返回商店"
+    lore:
+      - "返回 BedWars 商店"

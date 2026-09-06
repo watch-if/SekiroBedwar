@@ -99,12 +99,10 @@ public final class CrowListener implements Listener {
         }
     }
 
-    /** 死亡：结束悬停并重新起补给 CD（复活后自动补回一只）。 */
+    /** 死亡：结束悬停；本局购买过才重新起补给 CD（未购买者死亡不白送）。 */
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onDeath(PlayerDeathEvent event) {
-        java.util.UUID uuid = event.getEntity().getUniqueId();
-        manager.clear(uuid);
-        manager.scheduleRefill(uuid);
+        manager.handleDeath(event.getEntity().getUniqueId());
     }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)

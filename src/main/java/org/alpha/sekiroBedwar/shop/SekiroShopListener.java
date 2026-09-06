@@ -70,8 +70,8 @@ public final class SekiroShopListener implements Listener {
             return; // 玻璃板 / 空槽
         }
         BWPlayer bw = manager.bwOf(player);
-        if (bw == null) {
-            player.closeInventory(); // API 查不到玩家（未在 BedWars 中 / 插件异常）——不开买
+        if (bw == null && !SekiroShopManager.BACK_ID.equals(item.id())) {
+            player.closeInventory(); // API 查不到玩家（未在 BedWars 中 / 插件异常）——不开买；返回按钮例外
             return;
         }
         item.buy().accept(new BuyContext(player, bw));

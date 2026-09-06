@@ -84,7 +84,7 @@ public final class CrowManager {
         }
         plugin.getServer().getPluginManager().registerEvents(listener, plugin);
         org.screamingsandals.bedwars.api.events.PlayerLeaveEvent.handle(
-                plugin, ev -> purchases.remove(ev.getPlayer().getUuid())); // 离局清购买计数（下局可重购）
+                plugin, ev -> clearAll(ev.getPlayer().getUuid())); // 离局全清：计数/悬停/补给 CD（下局重新购买）
         tickTask = plugin.getServer().getScheduler().runTaskTimer(plugin, this::tick, 1L, 1L);
         shop.register(new ShopItem("crow", 42, this::renderItem, this::buy));
         plugin.getLogger().info("雾璃鸦已启用：悬停=" + config.hoverMs() + "ms 纸人×"
@@ -117,6 +117,17 @@ public final class CrowManager {
         clear(uuid);
         refillAt.remove(uuid);
         purchases.remove(uuid);
+    }
+
+    /**
+     * 玩家死亡：结束悬停；<b>仅当本局购买过雾璃鸦</b>才重新起补给 CD（修：从未购买
+     * 的玩家死亡复活白得一只的 bug）。
+     */
+    public void handleDeath(UUID uuid) {
+        clear(uuid);
+        if (purchases.getOrDefault(uuid, 0) > 0) {
+            scheduleRefill(uuid);
+        }
     }
 
     /** 启动补给 CD：delay 秒后自动补发一只（已在上限则届时跳过）。 */

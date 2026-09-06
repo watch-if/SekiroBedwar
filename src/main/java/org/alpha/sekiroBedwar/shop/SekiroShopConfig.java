@@ -22,6 +22,9 @@ public final class SekiroShopConfig {
     private String entryName;
     private List<String> entryLore;
     private String guiTitle;
+    private Material backIcon;
+    private String backName;
+    private List<String> backLore;
 
     public SekiroShopConfig(SekiroBedwar plugin) {
         this.plugin = plugin;
@@ -44,6 +47,21 @@ public final class SekiroShopConfig {
             this.entryLore = Collections.singletonList("忍具与强化，尽在掌握");
         }
         this.guiTitle = yaml.getString("shop.gui-title", "&8只狼忍具").replace('&', '§');
+        this.backIcon = parseMaterial(yaml.getString("shop.back-button.icon", "ARROW"), Material.ARROW);
+        this.backName = yaml.getString("shop.back-button.name", "返回商店");
+        this.backLore = yaml.getStringList("shop.back-button.lore");
+        if (this.backLore.isEmpty()) {
+            this.backLore = Collections.singletonList("返回 BedWars 商店");
+        }
+    }
+
+    private Material parseMaterial(String name, Material fallback) {
+        try {
+            return Material.valueOf(name.trim().toUpperCase());
+        } catch (IllegalArgumentException | NullPointerException ignored) {
+            plugin.getLogger().warning("跳过无效的忍具商店返回按钮图标: " + name + "，回退 " + fallback);
+            return fallback;
+        }
     }
 
     private Material parseMaterial(String name) {
@@ -78,5 +96,17 @@ public final class SekiroShopConfig {
 
     public String guiTitle() {
         return guiTitle;
+    }
+
+    public Material backIcon() {
+        return backIcon;
+    }
+
+    public String backName() {
+        return backName;
+    }
+
+    public List<String> backLore() {
+        return new ArrayList<>(backLore);
     }
 }

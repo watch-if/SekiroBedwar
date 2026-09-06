@@ -53,12 +53,14 @@ public final class BlockManager {
     private final StanceBreakManager stanceBreakManager;
     private final LightningManager lightningManager;
     private final DangerManager dangerManager;
+    private final org.alpha.sekiroBedwar.attribute.AttributeManager attributeManager;
     private final BlockListener listener;
 
     public BlockManager(SekiroBedwar plugin, BlockConfig config,
                         StanceManager stanceManager, DuelManager duelManager,
                         StanceBreakManager stanceBreakManager, LightningManager lightningManager,
-                        DangerManager dangerManager) {
+                        DangerManager dangerManager,
+                        org.alpha.sekiroBedwar.attribute.AttributeManager attributeManager) {
         this.plugin = plugin;
         this.config = config;
         this.stanceManager = stanceManager;
@@ -66,6 +68,7 @@ public final class BlockManager {
         this.stanceBreakManager = stanceBreakManager;
         this.lightningManager = lightningManager;
         this.dangerManager = dangerManager;
+        this.attributeManager = attributeManager;
         this.listener = new BlockListener(this);
     }
 
@@ -144,6 +147,7 @@ public final class BlockManager {
         }
         if (CombatUtils.resolveMeleeAttacker(event) != null) {
             lightningManager.onAttack(attacker, victim, false);
+            attributeManager.onAttack(attacker, victim, false); // 锈丸/炎上：连续未弹反计数 + 窗口效果
         }
     }
 

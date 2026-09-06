@@ -2,6 +2,8 @@ package org.alpha.sekiroBedwar;
 
 import org.alpha.sekiroBedwar.bead.BeadConfig;
 import org.alpha.sekiroBedwar.bead.BeadManager;
+import org.alpha.sekiroBedwar.attribute.AttributeConfig;
+import org.alpha.sekiroBedwar.attribute.AttributeManager;
 import org.alpha.sekiroBedwar.block.BlockConfig;
 import org.alpha.sekiroBedwar.block.BlockManager;
 import org.alpha.sekiroBedwar.crow.CrowConfig;
@@ -104,6 +106,7 @@ public final class SekiroBedwar extends JavaPlugin {
     private TerrorManager terrorManager;
     private SekiroShopManager sekiroShopManager;
     private CrowManager crowManager;
+    private AttributeManager attributeManager;
 
     @Override
     public void onEnable() {
@@ -182,9 +185,15 @@ public final class SekiroBedwar extends JavaPlugin {
         this.terrorManager = new TerrorManager(this, new TerrorConfig(this), this.paperDollManager, this.deflectManager);
         this.terrorManager.enable();
 
+        // 属性伤害（锈丸 / 炎上 / 还原）：与巴之雷三选一专精互斥——互斥状态统一由
+        // AttributeManager 判定（LightningManager 构造注入它；这里回填 lightning 供还原清档）
+        this.attributeManager = new AttributeManager(this, new AttributeConfig(this), this.sekiroShopManager);
+
         // 巴之雷（忍具商店两级购买）
         this.lightningManager = new LightningManager(this, new LightningConfig(this), stanceManager, duelManager,
-                this.paperDollManager, this.sekiroShopManager);
+                this.paperDollManager, this.sekiroShopManager, this.attributeManager);
+        this.attributeManager.setLightningManager(this.lightningManager);
+        this.attributeManager.enable();
         this.lightningManager.enable();
 
         // 危攻击 / 识破（独立模块）：主手持矛（突进附魔）疾跑攻击 = 危，不可弹反，
@@ -197,7 +206,7 @@ public final class SekiroBedwar extends JavaPlugin {
         // 盾牌普通格挡不完全免架势——防守方扣 Dbase×defender-multiplier（攻击方不扣）。
         // 只处理 ACTIVE 决斗内对方攻击（含弓箭/投射物），不破坏原版战斗。
         this.blockManager = new BlockManager(this, new BlockConfig(this), stanceManager, duelManager,
-                stanceBreakManager, this.lightningManager, this.dangerManager);
+                stanceBreakManager, this.lightningManager, this.dangerManager, this.attributeManager);
         this.blockManager.enable();
 
         // 完美弹反系统（独立模块，与普通格挡分离）：只判完美弹反——命中窗口则完整弹开攻击并重创
@@ -209,7 +218,7 @@ public final class SekiroBedwar extends JavaPlugin {
         this.parrySealManager.enable();
         this.parryManager = new ParryManager(this, parryConfig, stanceManager, duelManager,
                 stanceBreakManager, this.parrySealManager, this.lightningManager, this.dangerManager,
-                this.deflectManager);
+                this.deflectManager, this.attributeManager);
         this.parryManager.enable();
 
         // 决斗冻结系统（独立模块）：物资刷新冻结（白圈内刷新点暂停实际生成，计时照常，
@@ -259,6 +268,9 @@ public final class SekiroBedwar extends JavaPlugin {
         }
         if (this.lightningManager != null) {
             this.lightningManager.disable();
+        }
+        if (this.attributeManager != null) {
+            this.attributeManager.disable();
         }
         if (this.dangerManager != null) {
             this.dangerManager.disable();
@@ -424,5 +436,10 @@ public final class SekiroBedwar extends JavaPlugin {
     /** 获取雾璃鸦管理器。 */
     public CrowManager getCrowManager() {
         return this.crowManager;
+    }
+
+    /** 获取属性伤害（锈丸/炎上/还原 + 三选一互斥）管理器。 */
+    public AttributeManager getAttributeManager() {
+        return this.attributeManager;
     }
 }

@@ -1,6 +1,7 @@
 package org.alpha.sekiroBedwar.lightning;
 
 import org.alpha.sekiroBedwar.SekiroBedwar;
+import org.alpha.sekiroBedwar.attribute.AttributeManager;
 import org.alpha.sekiroBedwar.duel.Duel;
 import org.alpha.sekiroBedwar.duel.DuelManager;
 import org.alpha.sekiroBedwar.duel.DuelState;
@@ -60,6 +61,7 @@ public final class LightningManager {
     private final DuelManager duelManager;
     private final PaperDollManager paperDollManager;
     private final SekiroShopManager shop;
+    private final AttributeManager attributeManager;
     private final LightningListener listener;
 
     /** 雷击过期结算任务（每 tick 检查待结算雷击并施加缓存伤害）。 */
@@ -88,13 +90,15 @@ public final class LightningManager {
 
     public LightningManager(SekiroBedwar plugin, LightningConfig config,
                             StanceManager stanceManager, DuelManager duelManager,
-                            PaperDollManager paperDollManager, SekiroShopManager shop) {
+                            PaperDollManager paperDollManager, SekiroShopManager shop,
+                            AttributeManager attributeManager) {
         this.plugin = plugin;
         this.config = config;
         this.stanceManager = stanceManager;
         this.duelManager = duelManager;
         this.paperDollManager = paperDollManager;
         this.shop = shop;
+        this.attributeManager = attributeManager;
         this.listener = new LightningListener(this);
     }
 
@@ -151,6 +155,31 @@ public final class LightningManager {
         tridentJumpUntil.remove(uuid);
         strikes.remove(uuid);
         tridentMissingSince.remove(uuid);
+    }
+
+    /**
+     * 还原（由 {@code AttributeManager} 统一执行三选一重选时调用）：清巴之雷等级与战斗状态，
+     * 并收回 L2 附赠的巴之雷三叉戟（背包 / 掉落中的都不再受补偿与保护）。
+     */
+    public void resetForRestore(UUID uuid) {
+        levels.remove(uuid);
+        comboCount.remove(uuid);
+        comboLastHit.remove(uuid);
+        comboReadyUntil.remove(uuid);
+        tridentTarget.remove(uuid);
+        tridentHitUntil.remove(uuid);
+        tridentJumpUntil.remove(uuid);
+        tridentMissingSince.remove(uuid);
+        strikes.remove(uuid);
+        Player player = Bukkit.getPlayer(uuid);
+        if (player != null && player.isOnline()) {
+            ItemStack[] contents = player.getInventory().getContents();
+            for (int i = 0; i < contents.length; i++) {
+                if (isTrident(contents[i])) {
+                    player.getInventory().setItem(i, null);
+                }
+            }
+        }
     }
 
     /**
@@ -348,6 +377,12 @@ public final class LightningManager {
             return;
         }
         UUID uuid = player.getUniqueId();
+        // 三选一专精互斥：已选锈丸 / 炎上则封锁巴之雷（需「还原」后重选）
+        if (attributeManager != null
+                && attributeManager.ownsOtherTree(uuid, AttributeManager.Tree.LIGHTNING)) {
+            player.sendMessage("§c只能专精一种属性强化（巴之雷/锈丸/炎上）——可购买「还原」后重选！");
+            return;
+        }
         int level = levels.getOrDefault(uuid, 0) + 1;
         if (level > 2) {
             player.sendMessage("§c巴之雷已习得全部等级！");

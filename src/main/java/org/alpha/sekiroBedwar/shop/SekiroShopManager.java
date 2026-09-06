@@ -273,6 +273,9 @@ public final class SekiroShopManager {
 
     // ============ GUI 构建 ============
 
+    /** 返回按钮固定占用右下角槽位（id 供监听器放行 BWPlayer 缺失场景）。 */
+    public static final String BACK_ID = "back";
+
     /** 为玩家现建并打开忍具商店 GUI（每次打开全新渲染）。 */
     public void open(Player player) {
         Map<Integer, ShopItem> slots = new LinkedHashMap<>();
@@ -281,16 +284,19 @@ public final class SekiroShopManager {
         sorted.sort(Comparator.comparingInt(ShopItem::order));
         int slot = 0;
         for (ShopItem item : sorted) {
-            if (slot >= GUI_SIZE) {
-                plugin.getLogger().warning("忍具商店条目超过 " + GUI_SIZE + " 个，超出部分未展示: " + item.id());
+            if (slot >= GUI_SIZE - 1) {
+                plugin.getLogger().warning("忍具商店条目已达上限，超出部分未展示: " + item.id());
                 break;
             }
             contents[slot] = safeRender(item, player);
             slots.put(slot, item);
             slot++;
         }
+        ShopItem back = new ShopItem(BACK_ID, Integer.MAX_VALUE, v -> renderBackItem(), this::returnToBedwarsShop);
+        contents[GUI_SIZE - 1] = renderBackItem();
+        slots.put(GUI_SIZE - 1, back);
         ItemStack filler = filler();
-        for (int i = slot; i < GUI_SIZE; i++) {
+        for (int i = slot; i < GUI_SIZE - 1; i++) {
             contents[i] = filler;
         }
         SekiroShopHolder holder = new SekiroShopHolder(slots);
@@ -298,6 +304,31 @@ public final class SekiroShopManager {
         holder.setInventory(inventory);
         inventory.setContents(contents);
         player.openInventory(inventory);
+    }
+
+    private ItemStack renderBackItem() {
+        return icon(config.backIcon(), "§e" + config.backName(), config.backLore());
+    }
+
+    /** 右下角返回按钮：下一 tick 重新打开 BedWars 默认商店（事件回调内换窗有 desync 坑）。 */
+    private void returnToBedwarsShop(BuyContext ctx) {
+        Player player = ctx.player();
+        if (player == null || !player.isOnline()) {
+            return;
+        }
+        final BWPlayer bw = ctx.bwPlayer();
+        if (bw == null) {
+            player.closeInventory();
+            return;
+        }
+        Bukkit.getScheduler().runTask(plugin, () -> {
+            try {
+                org.screamingsandals.bedwars.api.BedwarsAPI.getInstance()
+                        .getStoreManager().tryOpenDefaultStore(bw);
+            } catch (RuntimeException | LinkageError ex) {
+                player.closeInventory();
+            }
+        });
     }
 
     /** 购买后刷新当前 GUI 的渲染（状态 / 动态价格即时更新）。 */

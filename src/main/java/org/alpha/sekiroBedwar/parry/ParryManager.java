@@ -69,13 +69,15 @@ public final class ParryManager {
     private final LightningManager lightningManager;
     private final DangerManager dangerManager;
     private final DeflectManager deflectManager;
+    private final org.alpha.sekiroBedwar.attribute.AttributeManager attributeManager;
     private final ParryListener listener;
 
     public ParryManager(SekiroBedwar plugin, ParryConfig config,
                         StanceManager stanceManager, DuelManager duelManager,
                         StanceBreakManager stanceBreakManager, ParrySealManager sealManager,
                         LightningManager lightningManager, DangerManager dangerManager,
-                        DeflectManager deflectManager) {
+                        DeflectManager deflectManager,
+                        org.alpha.sekiroBedwar.attribute.AttributeManager attributeManager) {
         this.plugin = plugin;
         this.config = config;
         this.latency = new LatencyCompensationManager(config);
@@ -87,6 +89,7 @@ public final class ParryManager {
         this.lightningManager = lightningManager;
         this.dangerManager = dangerManager;
         this.deflectManager = deflectManager;
+        this.attributeManager = attributeManager;
         this.listener = new ParryListener(this, window, latency);
     }
 
@@ -201,6 +204,7 @@ public final class ParryManager {
             window.consumeBlockStart(victim.getUniqueId());
         }
         lightningManager.onAttack(attacker, victim, true);
+        attributeManager.onAttack(attacker, victim, true); // 锈丸/炎上：被完美弹反清零连续计数
     }
 
     /**
