@@ -406,7 +406,7 @@ lightning:
 rust:
   enabled: true
   name: "锈丸"
-  icon: SPIDER_EYE   # 原版无蜘蛛头颅，图标用蜘蛛眼
+  icon: SPIDER_EYE
   lv1-currency: gold
   lv1-amount: 30
   lv2-currency: gold
@@ -425,7 +425,7 @@ rust:
 burn:
   enabled: true
   name: "炎上"
-  icon: FIRE_CHARGE   # 火方块不可作为物品，图标用火焰弹
+  icon: FIRE_CHARGE
   lv1-currency: gold
   lv1-amount: 30
   lv2-currency: gold
