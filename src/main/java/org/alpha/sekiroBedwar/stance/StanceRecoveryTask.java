@@ -2,8 +2,11 @@ package org.alpha.sekiroBedwar.stance;
 
 import org.alpha.sekiroBedwar.SekiroBedwar;
 import org.bukkit.Bukkit;
+import org.bukkit.entity.Player;
+import org.bukkit.potion.PotionEffectType;
 import org.bukkit.scheduler.BukkitTask;
 
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -22,6 +25,9 @@ import java.util.UUID;
  * {@link StanceManager#markActive} 标记——攻击方产生攻击、受击方受到攻击都会重置计时并暂停恢复
  * （攻击方成功出手时架势值可能不变，但持续作战不应被自然恢复）。即自然恢复只在
  * <b>既没产生攻击、也没受到攻击</b>的持续空闲后触发。
+ * <b>负面效果同样视为活跃</b>（{@code dot-maintains-active}，默认开）：身上有
+ * {@code dot-effects}（默认中毒 / 凋零）或正在着火时，每 tick 维持 {@link StanceManager#markActive}
+ * ——锈丸毒 / 炎上火的持续伤害期间架势不挂恢复（DoT 是施压手段，不能被恢复抵消）。
  * 自然恢复经 {@link StanceManager#recoverStance} 增加（不刷新变化计时），故一旦 idle 会持续恢复
  * 直至满架势或再次发生战斗活跃。</p>
  *
@@ -69,6 +75,12 @@ public final class StanceRecoveryTask {
         long idleMillis = (long) (config.naturalRecoveryIdleSeconds() * 1000.0);
         long now = System.currentTimeMillis();
         for (UUID uuid : stanceManager.getActiveUuids()) {
+            // 负面效果维持：身上有中毒 / 凋零（配置集合）或正在着火 → 每 tick 刷新战斗活跃，
+            // 持续伤害期间架势不自然恢复（中毒是锈丸的施压手段，不应靠挂恢复抵消）
+            if (config.dotMaintainsActive() && hasSustainedNegative(uuid)) {
+                stanceManager.markActive(uuid);
+                continue;
+            }
             // idle 触发：5 秒内有过战斗活跃（产生/受到攻击、架势变化）则暂停自然恢复
             if (now - stanceManager.getLastStanceChangeAt(uuid) < idleMillis) {
                 continue;
@@ -86,6 +98,24 @@ public final class StanceRecoveryTask {
             double deltaPerTick = rate * max * (0.5 + 0.5 * x) / 20.0;
             stanceManager.recoverStance(uuid, deltaPerTick);
         }
+    }
+
+    /** 玩家身上是否有持续负面：着火（fireTicks&gt;0）或配置 {@code dot-effects} 中的效果（中毒/凋零等）。 */
+    private boolean hasSustainedNegative(UUID uuid) {
+        Player player = Bukkit.getPlayer(uuid);
+        if (player == null || !player.isOnline()) {
+            return false;
+        }
+        if (player.getFireTicks() > 0) {
+            return true;
+        }
+        List<PotionEffectType> effects = config.dotEffects();
+        for (PotionEffectType type : effects) {
+            if (player.hasPotionEffect(type)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /** 写操作必须位于 Bukkit 主线程（快速失败，防止异步线程篡改状态）。 */

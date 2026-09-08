@@ -4,11 +4,17 @@ import org.alpha.sekiroBedwar.bead.BeadConfig;
 import org.alpha.sekiroBedwar.bead.BeadManager;
 import org.alpha.sekiroBedwar.attribute.AttributeConfig;
 import org.alpha.sekiroBedwar.attribute.AttributeManager;
+import org.alpha.sekiroBedwar.armory.ArmorShopConfig;
+import org.alpha.sekiroBedwar.armory.ArmorShopManager;
 import org.alpha.sekiroBedwar.block.BlockConfig;
 import org.alpha.sekiroBedwar.block.BlockManager;
 import org.alpha.sekiroBedwar.crow.CrowConfig;
 import org.alpha.sekiroBedwar.crow.CrowManager;
 import org.alpha.sekiroBedwar.deflect.DeflectConfig;
+import org.alpha.sekiroBedwar.equip.AutoEquipConfig;
+import org.alpha.sekiroBedwar.equip.AutoEquipManager;
+import org.alpha.sekiroBedwar.equip.DurabilityGuardConfig;
+import org.alpha.sekiroBedwar.equip.DurabilityGuardManager;
 import org.alpha.sekiroBedwar.deflect.DeflectManager;
 import org.alpha.sekiroBedwar.danger.DangerConfig;
 import org.alpha.sekiroBedwar.danger.DangerManager;
@@ -19,6 +25,9 @@ import org.alpha.sekiroBedwar.freeze.ResourceFreezeManager;
 import org.alpha.sekiroBedwar.freeze.RespawnFreezeManager;
 import org.alpha.sekiroBedwar.lightning.LightningConfig;
 import org.alpha.sekiroBedwar.lightning.LightningManager;
+import org.alpha.sekiroBedwar.mystery.IFrameManager;
+import org.alpha.sekiroBedwar.mystery.MysteryConfig;
+import org.alpha.sekiroBedwar.mystery.MysteryManager;
 import org.alpha.sekiroBedwar.paperdoll.DriftingPaperDollManager;
 import org.alpha.sekiroBedwar.paperdoll.PaperDollConfig;
 import org.alpha.sekiroBedwar.paperdoll.PaperDollManager;
@@ -44,6 +53,8 @@ import org.alpha.sekiroBedwar.stance.StanceXpDisplay;
 import org.alpha.sekiroBedwar.swordblock.SwordBlockingManager;
 import org.alpha.sekiroBedwar.terror.TerrorConfig;
 import org.alpha.sekiroBedwar.terror.TerrorManager;
+import org.alpha.sekiroBedwar.windcharge.WindChargeConfig;
+import org.alpha.sekiroBedwar.windcharge.WindChargeManager;
 import org.bukkit.plugin.java.JavaPlugin;
 
 /**
@@ -106,7 +117,13 @@ public final class SekiroBedwar extends JavaPlugin {
     private TerrorManager terrorManager;
     private SekiroShopManager sekiroShopManager;
     private CrowManager crowManager;
+    private WindChargeManager windChargeManager;
     private AttributeManager attributeManager;
+    private MysteryManager mysteryManager;
+    private IFrameManager iFrameManager;
+    private AutoEquipManager autoEquipManager;
+    private ArmorShopManager armorShopManager;
+    private DurabilityGuardManager durabilityGuardManager;
 
     @Override
     public void onEnable() {
@@ -171,11 +188,30 @@ public final class SekiroBedwar extends JavaPlugin {
                 this.sekiroShopManager);
         this.deflectManager.enable();
 
-        // 雾璃鸦（反击型忍具）：忍具商店购买绑定末影之眼；掷出激活头顶悬停 2s，
+        // 自动装备：BedWars 商店购买盔/胸/腿/靴后从背包取出直接穿身上（Pre 暂存 + Post 配对，不取消商店事件）
+        this.autoEquipManager = new AutoEquipManager(this, new AutoEquipConfig(this));
+        this.autoEquipManager.enable();
+
+        // 取消耐久消耗：按类别（护甲/工具/盾牌）取消 PlayerItemDamageEvent
+        this.durabilityGuardManager = new DurabilityGuardManager(this, new DurabilityGuardConfig(this));
+        this.durabilityGuardManager.enable();
+
+        // 护甲商店：劫持商店主页「护甲」分类 → 自管套装页（四件即买即穿，复用忍具商店 GUI 框架）
+        this.armorShopManager = new ArmorShopManager(this, new ArmorShopConfig(this), this.sekiroShopManager);
+        this.armorShopManager.enable();
+
+        // 雾璃鸦（反击型忍具）：忍具商店购买绑定末影之眼；右键激活（拦截原版投掷）头顶悬停 2s，
         // 期间首次受玩家伤害免伤并传送到攻击方身后，悬停结束破碎
         this.crowManager = new CrowManager(this, new CrowConfig(this), this.paperDollManager,
                 this.sekiroShopManager);
         this.crowManager.enable();
+
+        // 风弹（独立忍具）：忍具商店购买绑定风弹；投掷消耗 1 纸人 / 命中后传送复用 paper-doll
+        // 机制；释放瞬间在面前生成半椭圆爆风墙（TNT 爆炸特效左→右扫过 + 停留），触碰者短时间内
+        // 不能防御与攻击（强制收盾 + 对实体伤害一律取消），窗口内不可叠加
+        this.windChargeManager = new WindChargeManager(this, new WindChargeConfig(this), stanceManager,
+                this.sekiroShopManager);
+        this.windChargeManager.enable();
 
         // 佛珠（忍具商店递增价购买）：单局上限 4 次、每次 +5 最大血量、价格递增
         this.beadManager = new BeadManager(this, new BeadConfig(this), this.sekiroShopManager);
@@ -202,11 +238,20 @@ public final class SekiroBedwar extends JavaPlugin {
                 this.sekiroShopManager);
         this.dangerManager.enable();
 
+        // 秘传系统：无敌帧双开关（全局默认有 / 决斗默认无）+ 秘传武技框架
+        // （第一秘传·飞渡浮舟：七连击节奏识别，近战命中钩子由 Block/Parry 统一转发）
+        MysteryConfig mysteryConfig = new MysteryConfig(this);
+        this.mysteryManager = new MysteryManager(this, mysteryConfig, stanceManager, this.paperDollManager);
+        this.mysteryManager.enable();
+        this.iFrameManager = new IFrameManager(this, mysteryConfig, this.duelManager);
+        this.iFrameManager.enable();
+
         // 普通格挡 / 受击架势（独立模块）：无格挡命中扣受击方架势 Dactual×hit-multiplier；
         // 盾牌普通格挡不完全免架势——防守方扣 Dbase×defender-multiplier（攻击方不扣）。
         // 只处理 ACTIVE 决斗内对方攻击（含弓箭/投射物），不破坏原版战斗。
         this.blockManager = new BlockManager(this, new BlockConfig(this), stanceManager, duelManager,
-                stanceBreakManager, this.lightningManager, this.dangerManager, this.attributeManager);
+                stanceBreakManager, this.lightningManager, this.dangerManager, this.attributeManager,
+                this.mysteryManager);
         this.blockManager.enable();
 
         // 完美弹反系统（独立模块，与普通格挡分离）：只判完美弹反——命中窗口则完整弹开攻击并重创
@@ -218,7 +263,7 @@ public final class SekiroBedwar extends JavaPlugin {
         this.parrySealManager.enable();
         this.parryManager = new ParryManager(this, parryConfig, stanceManager, duelManager,
                 stanceBreakManager, this.parrySealManager, this.lightningManager, this.dangerManager,
-                this.deflectManager, this.attributeManager);
+                this.deflectManager, this.attributeManager, this.mysteryManager);
         this.parryManager.enable();
 
         // 决斗冻结系统（独立模块）：物资刷新冻结（白圈内刷新点暂停实际生成，计时照常，
@@ -274,6 +319,21 @@ public final class SekiroBedwar extends JavaPlugin {
         }
         if (this.dangerManager != null) {
             this.dangerManager.disable();
+        }
+        if (this.iFrameManager != null) {
+            this.iFrameManager.disable(); // 全员恢复原版 20 tick（先于 DuelManager 关闭）
+        }
+        if (this.mysteryManager != null) {
+            this.mysteryManager.disable();
+        }
+        if (this.armorShopManager != null) {
+            this.armorShopManager.disable();
+        }
+        if (this.autoEquipManager != null) {
+            this.autoEquipManager.disable();
+        }
+        if (this.windChargeManager != null) {
+            this.windChargeManager.disable();
         }
         if (this.crowManager != null) {
             this.crowManager.disable();
@@ -438,8 +498,28 @@ public final class SekiroBedwar extends JavaPlugin {
         return this.crowManager;
     }
 
+    /** 获取风弹管理器。 */
+    public WindChargeManager getWindChargeManager() {
+        return this.windChargeManager;
+    }
+
+    /** 获取秘传宿主（飞渡浮舟等武技）。 */
+    public MysteryManager getMysteryManager() {
+        return this.mysteryManager;
+    }
+
+    /** 获取无敌帧开关管理器。 */
+    public IFrameManager getiFrameManager() {
+        return this.iFrameManager;
+    }
+
     /** 获取属性伤害（锈丸/炎上/还原 + 三选一互斥）管理器。 */
     public AttributeManager getAttributeManager() {
         return this.attributeManager;
+    }
+
+    /** 获取护甲商店（分类劫持 + 套装页）管理器。 */
+    public ArmorShopManager getArmorShopManager() {
+        return this.armorShopManager;
     }
 }

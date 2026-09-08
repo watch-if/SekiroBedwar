@@ -114,8 +114,17 @@ public final class SwordBlockingManager {
 
     private void scanPlayer(Player player) {
         PlayerInventory inv = player.getInventory();
-        inv.setItemInMainHand(ensureSwordBlocking(inv.getItemInMainHand()));
-        inv.setItemInOffHand(ensureSwordBlocking(inv.getItemInOffHand()));
+        // 仅在实际注入组件时回填槽位——无变化不 setItem，避免每扫描周期重设装备槽触发无谓的客户端同步
+        ItemStack main = inv.getItemInMainHand();
+        ItemStack modifiedMain = ensureSwordBlocking(main);
+        if (modifiedMain != main) {
+            inv.setItemInMainHand(modifiedMain);
+        }
+        ItemStack off = inv.getItemInOffHand();
+        ItemStack modifiedOff = ensureSwordBlocking(off);
+        if (modifiedOff != off) {
+            inv.setItemInOffHand(modifiedOff);
+        }
         ItemStack[] contents = inv.getStorageContents();
         for (int i = 0; i < contents.length; i++) {
             ItemStack modified = ensureSwordBlocking(contents[i]);

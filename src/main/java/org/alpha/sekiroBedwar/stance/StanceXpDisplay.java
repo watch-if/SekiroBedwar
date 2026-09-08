@@ -37,10 +37,17 @@ public final class StanceXpDisplay {
     /** 活跃决斗玩家 UUID → 进入决斗前保存的原本经验条状态。 */
     private final Map<UUID, SavedXp> active = new HashMap<>();
 
+    /** 玩家 UUID → 上一次实际发给客户端的经验条值（量化后），未变化则跳过写入（省 20 包/秒/人的重复同步）。 */
+    private final Map<UUID, SentXp> lastSent = new HashMap<>();
+
     private BukkitTask refreshTask;
 
     /** 进入决斗时保存的玩家原本经验条状态（等级 + 经验条进度）。 */
     private record SavedXp(int level, float exp) {
+    }
+
+    /** 已发送经验条状态（exp 量化为百分步避免浮点抖动）。 */
+    private record SentXp(int level, int expSteps) {
     }
 
     public StanceXpDisplay(SekiroBedwar plugin, StanceConfig config, StanceManager stanceManager) {
@@ -75,6 +82,7 @@ public final class StanceXpDisplay {
     /** 玩家下线：移除其经验条占用与保存值（离线状态无从恢复，忽略）。 */
     public void removePlayer(UUID uuid) {
         active.remove(uuid);
+        lastSent.remove(uuid);
     }
 
     /** 插件禁用：取消刷新任务并恢复全部在线玩家的原本经验值。 */
@@ -97,6 +105,7 @@ public final class StanceXpDisplay {
 
     /** 恢复玩家原本经验条状态（仅当仍在保存值且玩家在线）。 */
     private void restore(UUID uuid) {
+        lastSent.remove(uuid);
         SavedXp saved = active.remove(uuid);
         if (saved == null) {
             return;
@@ -134,8 +143,13 @@ public final class StanceXpDisplay {
                 remainingMs = Math.max(remainingMs, attribute.getWindowRemainingMillis(uuid));
             }
             int level = remainingMs > 0 ? (int) Math.ceil(remainingMs / 1000.0) : 0;
-            player.setLevel(level);
-            player.setExp((float) clamp01(stanceManager.getPercentage(uuid)));
+            int expSteps = (int) Math.round(clamp01(stanceManager.getPercentage(uuid)) * 100.0);
+            SentXp prev = lastSent.get(uuid);
+            if (prev == null || prev.level() != level || prev.expSteps() != expSteps) {
+                player.setLevel(level);
+                player.setExp(expSteps / 100f);
+                lastSent.put(uuid, new SentXp(level, expSteps));
+            }
         }
     }
 

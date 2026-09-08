@@ -278,14 +278,22 @@ public final class SekiroShopManager {
 
     /** 为玩家现建并打开忍具商店 GUI（每次打开全新渲染）。 */
     public void open(Player player) {
+        openPage(player, config.guiTitle(), items);
+    }
+
+    /**
+     * 通用开页（护甲商店等衍生页面复用）：条目按 order 铺前部槽位，右下角固定返回按钮
+     * （点击重开 BedWars 默认商店），其余灰玻璃板填充；全新渲染无缓存。
+     */
+    public void openPage(Player player, String title, List<ShopItem> pageItems) {
         Map<Integer, ShopItem> slots = new LinkedHashMap<>();
         ItemStack[] contents = new ItemStack[GUI_SIZE];
-        List<ShopItem> sorted = new ArrayList<>(items);
+        List<ShopItem> sorted = new ArrayList<>(pageItems);
         sorted.sort(Comparator.comparingInt(ShopItem::order));
         int slot = 0;
         for (ShopItem item : sorted) {
             if (slot >= GUI_SIZE - 1) {
-                plugin.getLogger().warning("忍具商店条目已达上限，超出部分未展示: " + item.id());
+                plugin.getLogger().warning("商店页面条目已达上限，超出部分未展示: " + item.id());
                 break;
             }
             contents[slot] = safeRender(item, player);
@@ -300,10 +308,15 @@ public final class SekiroShopManager {
             contents[i] = filler;
         }
         SekiroShopHolder holder = new SekiroShopHolder(slots);
-        Inventory inventory = Bukkit.createInventory(holder, GUI_SIZE, config.guiTitle());
+        Inventory inventory = Bukkit.createInventory(holder, GUI_SIZE, title);
         holder.setInventory(inventory);
         inventory.setContents(contents);
         player.openInventory(inventory);
+    }
+
+    /** top 视图是否 slib 商店主页（供护甲等分类劫持判定，内部反射已缓存化）。 */
+    public boolean isShopMainView(Inventory top) {
+        return isMainShopView(top);
     }
 
     private ItemStack renderBackItem() {

@@ -6,10 +6,14 @@ import org.bukkit.boss.BarColor;
 import org.bukkit.boss.BarStyle;
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.configuration.file.YamlConfiguration;
+import org.bukkit.potion.PotionEffectType;
 
 import java.io.File;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 /**
@@ -48,6 +52,8 @@ public final class StanceConfig {
     private boolean naturalRecoveryEnabled;
     private double naturalRecoveryRate;
     private double naturalRecoveryIdleSeconds;
+    private boolean dotMaintainsActive;
+    private final List<PotionEffectType> dotEffects = new ArrayList<>();
 
     private int bossbarRefreshTicks;
     private BarColor bossbarColor;
@@ -89,6 +95,20 @@ public final class StanceConfig {
         this.naturalRecoveryEnabled = yaml.getBoolean("stance.natural-recovery.enabled", true);
         this.naturalRecoveryRate = Math.max(0.0, yaml.getDouble("stance.natural-recovery.rate", 0.16));
         this.naturalRecoveryIdleSeconds = Math.max(0.0, yaml.getDouble("stance.natural-recovery.idle-seconds", 5.0));
+        this.dotMaintainsActive = yaml.getBoolean("stance.natural-recovery.dot-maintains-active", true);
+        this.dotEffects.clear();
+        List<String> effectNames = yaml.getStringList("stance.natural-recovery.dot-effects");
+        if (effectNames.isEmpty()) {
+            effectNames = List.of("POISON", "WITHER");
+        }
+        for (String name : effectNames) {
+            PotionEffectType type = parsePotionEffect(name);
+            if (type != null) {
+                this.dotEffects.add(type);
+            } else {
+                plugin.getLogger().warning("忽略未知的负面效果名: " + name);
+            }
+        }
 
         this.bossbarRefreshTicks = Math.max(1, yaml.getInt("stance.bossbar.refresh-ticks", 5));
         this.bossbarColor = parseEnum(BarColor.class, yaml.getString("stance.bossbar.color"), BarColor.RED);
@@ -218,6 +238,42 @@ public final class StanceConfig {
     /** 自然恢复触发条件：距上次架势变化超过该秒数才开始恢复。 */
     public double naturalRecoveryIdleSeconds() {
         return naturalRecoveryIdleSeconds;
+    }
+
+    /** 身上有负面效果（中毒 / 凋零 / 着火等）时是否持续维持“战斗活跃”态（暂停自然恢复）。 */
+    public boolean dotMaintainsActive() {
+        return dotMaintainsActive;
+    }
+
+    /** 计入维持判定的负面效果集合（着火另按 fireTicks 判）。 */
+    public List<PotionEffectType> dotEffects() {
+        return List.copyOf(dotEffects);
+    }
+
+    /** 负面效果名 → 类型（1.21 现代名优先，兼容旧名；未知返回 null）。 */
+    private static PotionEffectType parsePotionEffect(String name) {
+        if (name == null) {
+            return null;
+        }
+        switch (name.trim().toUpperCase(Locale.ROOT)) {
+            case "POISON":
+                return PotionEffectType.POISON;
+            case "WITHER":
+            case "WITHERING":
+                return PotionEffectType.WITHER;
+            case "SLOW":
+            case "SLOWNESS":
+                return PotionEffectType.SLOWNESS;
+            case "HUNGER":
+                return PotionEffectType.HUNGER;
+            case "BLINDNESS":
+                return PotionEffectType.BLINDNESS;
+            case "NAUSEA":
+            case "CONFUSION":
+                return PotionEffectType.NAUSEA;
+            default:
+                return null;
+        }
     }
 
     /** BossBar 刷新间隔（tick）。 */

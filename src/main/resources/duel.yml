@@ -77,6 +77,11 @@ stance:
     # （被攻击扣架势、崩条等），都会重置计时暂停恢复。
     # 即自然恢复只在“既没产生攻击、也没受到攻击”的持续空闲后才触发。
     idle-seconds: 5
+    # 负面效果也算“战斗活跃”：身上有 dot-effects 中的效果或正在着火时持续重置计时——
+    # 锈丸毒 / 炎上火的 DoT 期间不能靠挂机把架势爬回来（DoT 是施压手段）。
+    dot-maintains-active: true
+    # 计入维持判定的负面效果（Bukkit 效果名；着火按 fireTicks 判定，无需列在这里）
+    dot-effects: [POISON, WITHER]
   # 架势条展示（BossBar，决斗期间双方互显对方）
   bossbar:
     # BossBar 进度刷新间隔（tick）
@@ -506,6 +511,55 @@ deflect:
     currency: iron
     amount: 5
 
+# ---------- 取消耐久消耗（DurabilityGuardManager） ----------
+# 取消 PlayerItemDamageEvent（盔甲受击/工具使用/盾牌格挡的磨损都会派发该事件）。
+# armor=盔/胸/腿/靴（含海龟壳）；tools=剑/镐/斧/锄/锹；shield=盾牌
+# enabled 为总开关。
+no-durability:
+  enabled: true
+  armor: true
+  tools: true
+  shield: true
+
+# ---------- 自动装备护甲（AutoEquipManager） ----------
+# BedWars 商店购买头盔 / 胸甲 / 护腿 / 靴子后，自动从背包取出穿到身上（原穿着物退回背包）。
+auto-equip:
+  enabled: true
+
+# ---------- 护甲商店（ArmorShopManager，分类劫持 + 档位制） ----------
+# 劫持 BedWars 商店主页上显示名含 category-name 的分类图标点击（机制同忍具商店入口的
+# LOWEST 劫持），打开自管「套装页」：一键购买 盔/胸/腿/靴 四件并立即穿到身上，
+# 页面右下角返回按钮重开 BedWars 商店。shop.yml 里原护甲分类的散件从此不可见（保留图标即可）。
+# 档位 = sets 列表顺序（低→高）：首次任选一档；买更高档时【销毁身上旧护甲】再穿新套装（不掉落
+# 不退回）；已拥有同档/更高档后，该档及低档入口锁定（不扣费）。档位按局记录（离局/退出清除）。
+# 缺本段配置时代码内置默认四档兜底。已知边界：不经 BedWars 购买管道 → 不即时获得团队「保护」
+# 升级附魔（依赖重生重附），也不做队伍染色。sets 可自由增删档位（material 为四件套名前缀）。
+armor-shop:
+  enabled: true
+  category-name: "护甲"
+  gui-title: "&8护甲商店"
+  sets:
+    - id: leather
+      name: "皮革套装"
+      material: LEATHER
+      currency: iron
+      amount: 1
+    - id: chainmail
+      name: "锁链套装"
+      material: CHAINMAIL
+      currency: iron
+      amount: 40
+    - id: iron
+      name: "铁质套装"
+      material: IRON
+      currency: gold
+      amount: 12
+    - id: diamond
+      name: "钻石套装"
+      material: DIAMOND
+      currency: emerald
+      amount: 6
+
 # ---------- 危攻击 / 识破（DangerManager，独立机制） ----------
 # 主手持矛（任一等级）+ 突进（LUNGE）附魔 + 疾跑攻击 = 危攻击：
 # 不可被完美弹反；格挡 → 破盾 + 扣防守方架势；识破（下蹲后 mikiri-window-ms 内接危）
@@ -519,6 +573,44 @@ danger:
   shop:
     currency: diamond
     amount: 1
+
+# ---------- 无敌帧开关（IFrameManager，秘传系统配套） ----------
+# 原版受击保护帧（maximumNoDamageTicks，默认 20 tick）的双开关：
+#   global-enabled = 全局（非决斗）是否有无敌帧（默认 true = 原版行为）；
+#   duel-enabled   = 决斗期间是否有无敌帧（默认 false = 决斗无，拼刀连击不被保护帧吞伤害）。
+# 实现 = 周期巡检逐人应用（每 iframe.scan-ticks 检查决斗状态并写帧参数，重生自动纠回）；
+# 插件禁用时全员恢复原版。
+iframe:
+  global-enabled: true
+  duel-enabled: false
+  # 巡检间隔（tick；5 = 0.25 秒）
+  scan-ticks: 5
+
+# ---------- 秘传（MysteryManager + 武技框架） ----------
+# 秘传武技系统第一式·飞渡浮舟：特定节奏的七段近战连击（仅 ACTIVE 决斗内，
+# 命中钩子与巴之雷 / 属性两系同一注入点；被完美弹反的命中仍算打出的一击）。
+# 相邻两击的间隔须依次落在 intervals-ticks 各值 ± tolerance-ticks 内
+# （毫秒口径：tick×50 ± 容差×50，以服务器单调时钟计时）；任何一击脱拍则本击
+# 作为新的一式从头重连。长间隔窗口（如 2→3、6→7 之间）允许右键格挡 / 投掷投掷物
+# ——这些动作不产生近战命中，不进序列也不打断。
+#   第 6 击有效命中（未被完美弹反）：受击方在普通架势换算外额外扣 sixth-bonus-stance；
+#   七击全部达标：攻击方得奖励（纸人可超持有上限）+ 架势恢复 + 生命恢复 + 完成音效。
+# intervals-ticks 缺失 / 为空时代码内置默认序列兜底（改动需重启生效）。
+mystery:
+  fei-du-fu-zhou:
+    # 是否启用（全局武技，无需购买）
+    enabled: true
+    name: "飞渡浮舟"
+    # 第 1→2、2→3、3→4、4→5、5→6、6→7 击的目标间隔（tick，可小数；长度 +1 = 总击数）
+    intervals-ticks: [7.3, 10.0, 5.7, 5.3, 5.7, 16.0]
+    # 每段间隔允许的上下浮动（tick）
+    tolerance-ticks: 0.2
+    # 第 6 击有效命中的额外架势伤害
+    sixth-bonus-stance: 10.0
+    # 完成奖励：纸人数量 / 恢复架势 / 恢复生命（0 = 该项不发）
+    reward-paper-dolls: 2
+    reward-stance: 5.0
+    reward-health: 1.0
 
 # ---------- 佛珠（BeadManager，忍具商店消耗品） ----------
 # 单局购买上限 4 次，每次 +5 最大血量（全局增益，死后重生恢复）；价格 4→6→8→10 钻递增
@@ -555,6 +647,46 @@ crow:
   # 激活消耗（或死亡失去）后自动补发一只的冷却秒数（0 = 关闭补给）
   refill-delay-seconds: 10
 
+# ---------- 风弹（WindChargeManager，独立机制） ----------
+# 忍具商店购买绑定风弹（不可丢弃 / 入容器）。释放归为投掷物一类：每次投掷消耗 1 纸人、
+# 物品退还（复用 paper-doll.throw）；命中目标后 2s 内左键可再耗 1 纸人传送（复用
+# paper-doll.teleport）。本段只定义风弹特有的「爆风墙」：
+# 释放瞬间在释放者面前生成一面半椭圆的面——面朝方向为短轴 depth、两侧各长轴 width、
+# 高 height 格；圆心与朝向在释放瞬间锁定（不随玩家移动）。
+# 特效：TNT 爆炸粒子从释放者左手侧向右手侧扫过 sweep-seconds 秒，扫完后整面停留
+# linger-seconds 秒。粒子存在期间（扫过 + 停留全程），触碰到墙面（touch-radius 判定）
+# 的玩家（释放者除外）disable-seconds 内【不能防御与攻击】：
+#   不能防御 = 强制收盾 + 禁止再举盾（含剑格挡）+ 决斗内进入「无法格挡」状态；
+#   不能攻击 = 其一切对实体伤害（近战 / 投射物）被取消。
+# 同一玩家 no-stack-seconds 内效果不可叠加（不重复施加）。
+wind-charge:
+  # 是否启用（false 时不登记忍具商店条目）
+  enabled: true
+  # 物品图标 / 名称（忍具商店与发放的绑定物品）
+  material: WIND_CHARGE
+  name: "风弹"
+  # 忍具商店价格
+  price-currency: gold
+  price-amount: 10
+  # 爆炸粒子名（org.bukkit.Particle 枚举名；非法名回退 EXPLOSION）
+  particle: EXPLOSION
+  # 半椭圆几何（格）：面朝方向短半轴 / 侧向长半轴（两侧各）/ 高
+  depth: 1.5
+  width: 2.5
+  height: 3.0
+  # 从左向右扫过播放时长（秒）
+  sweep-seconds: 1.0
+  # 扫完后整面粒子停留时长（秒）
+  linger-seconds: 1.0
+  # 弧面采样点数（粒子密度 / 触碰判定精度；2-64）
+  points: 16
+  # 触碰判定半径（格）
+  touch-radius: 0.6
+  # 触碰后不能防御与攻击的时长（秒）
+  disable-seconds: 0.5
+  # 效果不可叠加窗口（秒）：施加后该时长内再次触碰不重复施加
+  no-stack-seconds: 6.0
+
 # ---------- 僵尸头颅 / 恐怖条（TerrorManager，独立机制） ----------
 # 击杀玩家 50% 掉僵尸头颅；左键使用（耗 3 纸人 + 1 头颅）→ 半径 3 内 2s 反胃 + 1HP/s + 恐怖累积。
 # 恐怖条 F∈[0,100] 后台记录、不展示，满 100 瞬秒；无维持态时 -10/s 衰减。
@@ -585,7 +717,7 @@ islands: {}
 
 # ============ 五、忍具商店（SekiroShopManager） ============
 # 全部插件商品（剑攻速 / 巴之雷 / 锈丸 / 炎上 / 还原 / 下界合金长矛 / 纸人 / 漂流纸人 / 雾璃鸦 /
-# 佛珠 / 盾牌）的购买判定、扣费、发放都在本插件自管的 GUI 内完成，动态价格实时显示与校验；
+# 风弹 / 佛珠 / 盾牌）的购买判定、扣费、发放都在本插件自管的 GUI 内完成，动态价格实时显示与校验；
 # 属性三系（巴之雷/锈丸/炎上）与其「还原」在商店中相邻排列（order 20-23）。
 # 入口（接管模式）：玩家右键商店老板打开商店后，主页【右下角槽位】（inventory size-1）被
 # 放置为忍具商店入口物品（带 PDC 标记，5 tick 巡检维持，重渲染后自动补回），

@@ -70,6 +70,7 @@ public final class ParryManager {
     private final DangerManager dangerManager;
     private final DeflectManager deflectManager;
     private final org.alpha.sekiroBedwar.attribute.AttributeManager attributeManager;
+    private final org.alpha.sekiroBedwar.mystery.MysteryManager mysteryManager;
     private final ParryListener listener;
 
     public ParryManager(SekiroBedwar plugin, ParryConfig config,
@@ -77,7 +78,8 @@ public final class ParryManager {
                         StanceBreakManager stanceBreakManager, ParrySealManager sealManager,
                         LightningManager lightningManager, DangerManager dangerManager,
                         DeflectManager deflectManager,
-                        org.alpha.sekiroBedwar.attribute.AttributeManager attributeManager) {
+                        org.alpha.sekiroBedwar.attribute.AttributeManager attributeManager,
+                        org.alpha.sekiroBedwar.mystery.MysteryManager mysteryManager) {
         this.plugin = plugin;
         this.config = config;
         this.latency = new LatencyCompensationManager(config);
@@ -90,6 +92,7 @@ public final class ParryManager {
         this.dangerManager = dangerManager;
         this.deflectManager = deflectManager;
         this.attributeManager = attributeManager;
+        this.mysteryManager = mysteryManager;
         this.listener = new ParryListener(this, window, latency);
     }
 
@@ -205,6 +208,7 @@ public final class ParryManager {
         }
         lightningManager.onAttack(attacker, victim, true);
         attributeManager.onAttack(attacker, victim, true); // 锈丸/炎上：被完美弹反清零连续计数
+        mysteryManager.onAttack(attacker, victim, true);   // 秘传：被弹反仍算打出的一击（第 6 击加成除外）
     }
 
     /**
