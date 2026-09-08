@@ -612,6 +612,28 @@ mystery:
     reward-stance: 5.0
     reward-health: 1.0
 
+  # 秘传第二式·苇名十字斩：空手换刀的凌厉二连（全局启用，无需购买）。
+  # 起手：主手【持续空手 ≥ min-empty-hand-seconds】后持上近战武器（剑/斧/矛，1 tick
+  # 巡检跟踪主手转换）→ 武装；第一击近战命中起计时，第二击的命时间隔须落在
+  # interval-ticks ± tolerance-ticks 内（毫秒口径同飞渡浮舟）。
+  # 第二段为有效攻击（未被完美弹反）：击退对方（knockback-level 原版附魔级别口径）
+  # + 对方架势 −victim-stance-penalty + 自身架势 +self-stance-recovery。
+  # 脱拍或被弹反 → 二连终结，须重新空手达标再换刀起。
+  yamedo-cross-slash:
+    enabled: true
+    name: "苇名十字斩"
+    # 起手要求的空手最短持续时间（秒）：主手连续空置达该时长后换持近战武器才武装
+    min-empty-hand-seconds: 0.5
+    # 第一击 → 第二击的目标间隔（tick）
+    interval-ticks: 4.0
+    # 间隔允许的上下浮动（tick）
+    tolerance-ticks: 0.5
+    # 有效第二段的击退强度（原版「击退」附魔级别，2 = 击退II效果）
+    knockback-level: 2
+    # 有效第二段：受击方额外架势扣减 / 自身架势恢复
+    victim-stance-penalty: 7.0
+    self-stance-recovery: 3.0
+
 # ---------- 佛珠（BeadManager，忍具商店消耗品） ----------
 # 单局购买上限 4 次，每次 +5 最大血量（全局增益，死后重生恢复）；价格 4→6→8→10 钻递增
 # （递增价在忍具商店 GUI 实时渲染）；图标末影珍珠。

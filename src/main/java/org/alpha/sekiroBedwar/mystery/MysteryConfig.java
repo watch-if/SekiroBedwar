@@ -13,9 +13,11 @@ import java.util.List;
  * <p><b>无敌帧</b>：{@code iframe.global-enabled}（默认 true = 全局有，同原版）与
  * {@code iframe.duel-enabled}（默认 false = 决斗期间无）。</p>
  *
- * <p><b>飞渡浮舟</b>（{@code mystery.fei-du-fu-zhou}）：连击间隔序列（tick，
- * 可为小数，判定按 毫秒 = tick×50 ± 容差×50）、容差、第 6 击架势加成与完成奖励。
- * 列表缺省时代码内置默认序列兜底（服务器旧 duel.yml 缺段 = 模块静默失效的教训）。</p>
+ * <p><b>秘传武技</b>：第一式·飞渡浮舟（{@code mystery.fei-du-fu-zhou}）连击间隔序列
+ * （tick，可为小数，判定按 毫秒 = tick×50 ± 容差×50）、容差、第 6 击架势加成与完成奖励；
+ * 第二式·苇名十字斩（{@code mystery.yamedo-cross-slash}）二连间隔 / 容差 / 击退级别 /
+ * 架势扣减与恢复。列表缺省时代码内置默认兜底（服务器旧 duel.yml 缺段 =
+ * 模块静默失效的教训）。</p>
  */
 public final class MysteryConfig {
 
@@ -38,6 +40,16 @@ public final class MysteryConfig {
     private int fdfzRewardPaperDolls;
     private double fdfzRewardStance;
     private double fdfzRewardHealth;
+
+    // ---- 苇名十字斩 ----
+    private boolean yameEnabled;
+    private String yameName;
+    private double yameIntervalTicks;
+    private double yameToleranceTicks;
+    private double yameKnockbackLevel;
+    private double yameVictimStancePenalty;
+    private double yameSelfStanceRecovery;
+    private long yameMinEmptyMs;
 
     public MysteryConfig(SekiroBedwar plugin) {
         this.plugin = plugin;
@@ -63,6 +75,16 @@ public final class MysteryConfig {
         this.fdfzRewardPaperDolls = Math.max(0, yaml.getInt("mystery.fei-du-fu-zhou.reward-paper-dolls", 2));
         this.fdfzRewardStance = Math.max(0.0, yaml.getDouble("mystery.fei-du-fu-zhou.reward-stance", 5.0));
         this.fdfzRewardHealth = Math.max(0.0, yaml.getDouble("mystery.fei-du-fu-zhou.reward-health", 1.0));
+
+        this.yameEnabled = yaml.getBoolean("mystery.yamedo-cross-slash.enabled", true);
+        this.yameName = yaml.getString("mystery.yamedo-cross-slash.name", "苇名十字斩");
+        this.yameIntervalTicks = Math.max(0.1, yaml.getDouble("mystery.yamedo-cross-slash.interval-ticks", 4.0));
+        this.yameToleranceTicks = Math.max(0.0, yaml.getDouble("mystery.yamedo-cross-slash.tolerance-ticks", 0.5));
+        this.yameKnockbackLevel = Math.max(0.0, yaml.getDouble("mystery.yamedo-cross-slash.knockback-level", 2.0));
+        this.yameVictimStancePenalty = Math.max(0.0, yaml.getDouble("mystery.yamedo-cross-slash.victim-stance-penalty", 7.0));
+        this.yameSelfStanceRecovery = Math.max(0.0, yaml.getDouble("mystery.yamedo-cross-slash.self-stance-recovery", 3.0));
+        this.yameMinEmptyMs = Math.max(0L,
+                Math.round(Math.max(0.0, yaml.getDouble("mystery.yamedo-cross-slash.min-empty-hand-seconds", 0.5)) * 1000.0));
     }
 
     /** 连击间隔序列：列表缺失 / 为空 / 含非正值时回退内置默认（列表型配置必须有代码默认）。 */
@@ -136,5 +158,45 @@ public final class MysteryConfig {
     /** 完成奖励：恢复生命。 */
     public double fdfzRewardHealth() {
         return fdfzRewardHealth;
+    }
+
+    // ---- 苇名十字斩 ----
+
+    public boolean yameEnabled() {
+        return yameEnabled;
+    }
+
+    public String yameName() {
+        return yameName;
+    }
+
+    /** 第一击 → 第二击的目标间隔（tick）。 */
+    public double yameIntervalTicks() {
+        return yameIntervalTicks;
+    }
+
+    /** 间隔允许的上下浮动（tick）。 */
+    public double yameToleranceTicks() {
+        return yameToleranceTicks;
+    }
+
+    /** 第二段有效命中的击退强度（原版击退附魔级别口径，默认 2）。 */
+    public double yameKnockbackLevel() {
+        return yameKnockbackLevel;
+    }
+
+    /** 第二段有效命中：受击方额外架势扣减。 */
+    public double yameVictimStancePenalty() {
+        return yameVictimStancePenalty;
+    }
+
+    /** 第二段有效命中：自身架势恢复。 */
+    public double yameSelfStanceRecovery() {
+        return yameSelfStanceRecovery;
+    }
+
+    /** 起手要求的空手最短持续时间（毫秒）：主手连续空置达该时长后换持近战武器才武装。 */
+    public long yameMinEmptyMs() {
+        return yameMinEmptyMs;
     }
 }

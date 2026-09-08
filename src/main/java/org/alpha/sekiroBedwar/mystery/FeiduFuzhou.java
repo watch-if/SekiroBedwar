@@ -103,7 +103,7 @@ public final class FeiduFuzhou implements Mystery {
                 attacker.setHealth(healed);
             }
         }
-        attacker.playSound(attacker.getLocation(), Sound.ENTITY_PLAYER_LEVELUP, 0.9f, 1.6f);
+        attacker.playSound(attacker.getLocation(), Sound.BLOCK_ANVIL_LAND, 1.0f, 1.0f);
     }
 
     @Override

@@ -37,6 +37,9 @@ public final class MysteryManager implements Listener {
         if (config.fdfzEnabled()) {
             arts.add(new FeiduFuzhou(config, stanceManager, paperDollManager));
         }
+        if (config.yameEnabled()) {
+            arts.add(new YamedoCrossSlash(plugin, config, stanceManager));
+        }
     }
 
     public void enable() {
@@ -54,6 +57,7 @@ public final class MysteryManager implements Listener {
     public void disable() {
         for (Mystery art : arts) {
             art.clearAll();
+            art.shutdown();
         }
     }
 

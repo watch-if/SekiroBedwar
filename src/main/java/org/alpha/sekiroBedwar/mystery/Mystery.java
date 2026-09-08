@@ -27,7 +27,11 @@ public interface Mystery {
     default void clear(UUID player) {
     }
 
-    /** 插件禁用时全量清理。 */
+    /** 宿主禁用时全量清理状态。 */
     default void clearAll() {
+    }
+
+    /** 宿主禁用时注销自建周期任务（无自建任务的武技不用覆写）。 */
+    default void shutdown() {
     }
 }
