@@ -278,6 +278,9 @@ public final class LightningManager {
         attacker.setHealth(Math.min(max, attacker.getHealth() + heal));
         // 返还对方架势伤害
         stanceManager.reduceStance(strike.striker, strike.damage * retMult);
+        org.alpha.sekiroBedwar.api.internal.SekiroApiImpl.toolUse(id,
+                org.alpha.sekiroBedwar.api.ToolId.LIGHTNING_REVERSAL, strike.striker,
+                org.alpha.sekiroBedwar.api.ToolUseResult.SUCCESS);
         return true;
     }
 
@@ -357,6 +360,9 @@ public final class LightningManager {
             return;
         }
         if (paperDollManager != null && !paperDollManager.consumePaperDolls(attacker, paperDollManager.cost())) {
+            org.alpha.sekiroBedwar.api.internal.SekiroApiImpl.toolUse(attacker.getUniqueId(),
+                    org.alpha.sekiroBedwar.api.ToolId.LIGHTNING_STRIKE, victim.getUniqueId(),
+                    org.alpha.sekiroBedwar.api.ToolUseResult.INSUFFICIENT_RESOURCE);
             return;
         }
         double dmg = config.lightningDamage();
@@ -366,6 +372,9 @@ public final class LightningManager {
         strikes.put(victim.getUniqueId(),
                 new Strike(attacker.getUniqueId(), now() + config.reversalWindowMs(), dmg, stanceDeduct,
                         !victim.isOnGround()));
+        org.alpha.sekiroBedwar.api.internal.SekiroApiImpl.toolUse(attacker.getUniqueId(),
+                org.alpha.sekiroBedwar.api.ToolId.LIGHTNING_STRIKE, victim.getUniqueId(),
+                org.alpha.sekiroBedwar.api.ToolUseResult.SUCCESS);
     }
 
     // ============ 忍具商店 GUI ============

@@ -1,6 +1,8 @@
 package org.alpha.sekiroBedwar.mystery;
 
+import org.alpha.sekiroBedwar.api.TechniqueCancelReason;
 import org.bukkit.entity.Player;
+import org.bukkit.inventory.ItemStack;
 
 import java.util.UUID;
 
@@ -23,8 +25,27 @@ public interface Mystery {
      */
     void onAttack(Player attacker, Player victim, boolean parried);
 
-    /** 玩家死亡 / 退出 / 离局 / 决斗结束时清理其连击状态。 */
-    default void clear(UUID player) {
+    /**
+     * 快捷栏切换钩子（宿主监听 {@code PlayerItemHeldEvent} 统一转发，切换已实际发生）：
+     * {@code previous} / {@code current} = 切换前 / 后主手物品（可空）。
+     * 需要「空手换刀」起手的武技在此即时武装（记武装时刻，起手动作须在 1 tick 内衔接），
+     * 默认不关心。
+     */
+    default void onSlotSwitch(Player player, ItemStack previous, ItemStack current) {
+    }
+
+    /**
+     * 左键挥臂钩子（宿主监听 {@code PlayerAnimationEvent} 统一转发，不取消原版攻击）：
+     * 以左键为「释放」动作的武技（如龙闪）在此消费武装态，默认不关心。
+     */
+    default void onLeftClick(Player player) {
+    }
+
+    /**
+     * 玩家死亡 / 退出 / 离局 / 决斗结束时清理其连击状态。
+     * 实现中若存在进行中的连段 / 武装，先经公共 API 广播 Cancel 事件（携带 {@code reason}）再清除。
+     */
+    default void clear(UUID player, TechniqueCancelReason reason) {
     }
 
     /** 宿主禁用时全量清理状态。 */

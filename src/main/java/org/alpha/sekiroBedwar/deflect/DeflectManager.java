@@ -107,10 +107,16 @@ public final class DeflectManager {
         }
         if (!paperDollManager.consumePaperDolls(player, config.paperDollCost())) {
             player.playSound(player.getLocation(), Sound.ENTITY_VILLAGER_NO, 0.8f, 1.4f);
+            org.alpha.sekiroBedwar.api.internal.SekiroApiImpl.toolUse(uuid,
+                    org.alpha.sekiroBedwar.api.ToolId.SHIELD_DEFLECT, null,
+                    org.alpha.sekiroBedwar.api.ToolUseResult.INSUFFICIENT_RESOURCE);
             return false; // 纸人不足：仅低音提示（不扣不开窗，无文字）
         }
         deflectUntil.put(uuid, now() + config.deflectWindowMs());
         player.playSound(player.getLocation(), Sound.ITEM_SHIELD_BLOCK, 1.0f, 1.1f);
+        org.alpha.sekiroBedwar.api.internal.SekiroApiImpl.toolUse(uuid,
+                org.alpha.sekiroBedwar.api.ToolId.SHIELD_DEFLECT, null,
+                org.alpha.sekiroBedwar.api.ToolUseResult.SUCCESS);
         return true;
     }
 

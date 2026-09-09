@@ -34,12 +34,36 @@ public final class StanceManager {
     private final SekiroBedwar plugin;
     private final StanceConfig config;
 
-    /** 玩家 UUID → 架势状态。 */
+    /** 玩家 → 架势状态。 */
     private final ConcurrentMap<UUID, PlayerStance> stances = new ConcurrentHashMap<>();
+    /**
+     * 公共 API 观察者：数值型架势变化后回调（before≠after 才通知）。
+     * 自然恢复（{@link #recoverStance}）<b>不</b>回调——逐 tick 微增量会造成事件风暴，
+     * 外部需要恢复曲线时定时读 {@code SekiroBedwarApi.stanceOf}。
+     */
+    private volatile StanceObserver observer;
 
     public StanceManager(SekiroBedwar plugin, StanceConfig config) {
         this.plugin = plugin;
         this.config = config;
+    }
+
+    /** 安装 / 卸载公共 API 观察者（主线程，装配期一次性设置）。 */
+    public void setObserver(StanceObserver observer) {
+        this.observer = observer;
+    }
+
+    /** 玩家是否持有架势状态（= 处于决斗中，只读）。 */
+    public boolean hasStance(UUID uuid) {
+        return uuid != null && stances.containsKey(uuid);
+    }
+
+    private void notifyChange(UUID uuid, double before, double after) {
+        StanceObserver o = observer;
+        if (o != null && before != after) {
+            PlayerStance stance = stances.get(uuid);
+            o.onChange(uuid, before, after, stance == null ? 0.0 : stance.getMax());
+        }
     }
 
     /** 玩家进入决斗：初始化架势状态（current = max，按当前背包资源计算），保留原有崩条状态由处决窗口管理。 */
@@ -103,7 +127,9 @@ public final class StanceManager {
     public void addStance(UUID uuid, double amount) {
         PlayerStance stance = stances.get(uuid);
         if (stance != null) {
+            double before = stance.getCurrent();
             stance.add(Math.max(0.0, amount));
+            notifyChange(uuid, before, stance.getCurrent());
         }
     }
 
@@ -111,7 +137,9 @@ public final class StanceManager {
     public void reduceStance(UUID uuid, double amount) {
         PlayerStance stance = stances.get(uuid);
         if (stance != null) {
+            double before = stance.getCurrent();
             stance.reduce(Math.max(0.0, amount));
+            notifyChange(uuid, before, stance.getCurrent());
         }
     }
 
@@ -154,7 +182,9 @@ public final class StanceManager {
     public void setStance(UUID uuid, double value) {
         PlayerStance stance = stances.get(uuid);
         if (stance != null) {
+            double before = stance.getCurrent();
             stance.setCurrent(value);
+            notifyChange(uuid, before, stance.getCurrent());
         }
     }
 
@@ -302,7 +332,9 @@ public final class StanceManager {
         long now = System.currentTimeMillis();
         long brokenUntil = now + (long) (config.executionSeconds() * 1000.0);
         long guardUntil = now + (long) (config.staggerDurationSeconds() * 1000.0);
+        double before = stance.getCurrent();
         stance.breakStance(brokenUntil, guardUntil);
+        notifyChange(uuid, before, stance.getCurrent()); // 崩条清零对外可见（StanceBreakEvent 另有专报）
     }
 
     /**

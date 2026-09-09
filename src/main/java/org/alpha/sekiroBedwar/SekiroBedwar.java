@@ -28,6 +28,8 @@ import org.alpha.sekiroBedwar.lightning.LightningManager;
 import org.alpha.sekiroBedwar.mystery.IFrameManager;
 import org.alpha.sekiroBedwar.mystery.MysteryConfig;
 import org.alpha.sekiroBedwar.mystery.MysteryManager;
+import org.alpha.sekiroBedwar.mobban.MobBanConfig;
+import org.alpha.sekiroBedwar.mobban.MobBanManager;
 import org.alpha.sekiroBedwar.paperdoll.DriftingPaperDollManager;
 import org.alpha.sekiroBedwar.paperdoll.PaperDollConfig;
 import org.alpha.sekiroBedwar.paperdoll.PaperDollManager;
@@ -121,6 +123,7 @@ public final class SekiroBedwar extends JavaPlugin {
     private AttributeManager attributeManager;
     private MysteryManager mysteryManager;
     private IFrameManager iFrameManager;
+    private MobBanManager mobBanManager;
     private AutoEquipManager autoEquipManager;
     private ArmorShopManager armorShopManager;
     private DurabilityGuardManager durabilityGuardManager;
@@ -144,6 +147,14 @@ public final class SekiroBedwar extends JavaPlugin {
         //（均由 DuelTriggeredEvent / DuelEndedEvent 驱动）
         this.stanceConfig = new StanceConfig(this);
         this.stanceManager = new StanceManager(this, stanceConfig);
+        // 公共 API：安装内部发射器（事件与只读查询的宿主）+ 挂架势变化观察者。
+        // 战斗统计 / 排位 / 录像等外部插件只依赖 api 包监听事件，核心不为其实现任何业务。
+        org.alpha.sekiroBedwar.api.internal.SekiroApiImpl.install(this, this.duelManager, this.stanceManager);
+        org.alpha.sekiroBedwar.api.internal.SekiroApiImpl api =
+                org.alpha.sekiroBedwar.api.internal.SekiroApiImpl.get();
+        if (api != null) {
+            this.stanceManager.setObserver(api::onChange);
+        }
         this.stanceDisplay = new StanceBossBarDisplay(this, stanceConfig, stanceManager);
         this.stanceXpDisplay = new StanceXpDisplay(this, stanceConfig, stanceManager);
         getServer().getPluginManager().registerEvents(
@@ -241,7 +252,8 @@ public final class SekiroBedwar extends JavaPlugin {
         // 秘传系统：无敌帧双开关（全局默认有 / 决斗默认无）+ 秘传武技框架
         // （第一秘传·飞渡浮舟：七连击节奏识别，近战命中钩子由 Block/Parry 统一转发）
         MysteryConfig mysteryConfig = new MysteryConfig(this);
-        this.mysteryManager = new MysteryManager(this, mysteryConfig, stanceManager, this.paperDollManager);
+        this.mysteryManager = new MysteryManager(this, mysteryConfig, stanceManager, this.paperDollManager,
+                this.duelManager, duelConfig);
         this.mysteryManager.enable();
         this.iFrameManager = new IFrameManager(this, mysteryConfig, this.duelManager);
         this.iFrameManager.enable();
@@ -277,6 +289,11 @@ public final class SekiroBedwar extends JavaPlugin {
         getServer().getPluginManager().registerEvents(
                 new DuelBlockProtectionListener(freezeConfig, duelManager), this);
 
+        // 红圈生物禁令：进行决斗的红圈（与第三方排除同半径）内禁止铁傀儡 / 羊（TNT羊）生成，
+        // 且一切非玩家生物进圈即移除（巡检，无掉落无死亡消息）
+        this.mobBanManager = new MobBanManager(this, new MobBanConfig(this), duelConfig, this.duelManager);
+        this.mobBanManager.enable();
+
         // 剑格挡（独立模块）：1.21.2+ 有 blocks_attacks 组件时给剑赋盾牌格挡能力（右键举盾、
         // 可被斧头破盾、右键禁用）；1.21.1 无该组件自动跳过。
         this.swordBlockingManager = new SwordBlockingManager(this);
@@ -295,6 +312,9 @@ public final class SekiroBedwar extends JavaPlugin {
         // 冻结模块先于 DuelManager.disable() 禁用：清空冻结状态，避免关闭时 DuelEndedEvent 误恢复
         if (this.respawnFreezeManager != null) {
             this.respawnFreezeManager.disable();
+        }
+        if (this.mobBanManager != null) {
+            this.mobBanManager.disable();
         }
         if (this.resourceFreezeManager != null) {
             this.resourceFreezeManager.disable();
@@ -383,6 +403,11 @@ public final class SekiroBedwar extends JavaPlugin {
         if (this.duelTriggerManager != null) {
             this.duelTriggerManager.disable();
         }
+        // 公共 API 最后卸载（观察者摘除 + 停发事件）
+        if (this.stanceManager != null) {
+            this.stanceManager.setObserver(null);
+        }
+        org.alpha.sekiroBedwar.api.internal.SekiroApiImpl.uninstall();
     }
 
     /** 获取决斗触发管理器。 */
@@ -511,6 +536,11 @@ public final class SekiroBedwar extends JavaPlugin {
     /** 获取无敌帧开关管理器。 */
     public IFrameManager getiFrameManager() {
         return this.iFrameManager;
+    }
+
+    /** 获取红圈生物禁令管理器。 */
+    public MobBanManager getMobBanManager() {
+        return this.mobBanManager;
     }
 
     /** 获取属性伤害（锈丸/炎上/还原 + 三选一互斥）管理器。 */

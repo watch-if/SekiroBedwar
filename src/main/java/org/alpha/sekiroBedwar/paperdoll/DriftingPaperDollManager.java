@@ -128,6 +128,9 @@ public final class DriftingPaperDollManager {
         }
         double max = player.getMaxHealth();
         if (player.getHealth() <= max * config.driftingHpThreshold()) {
+            org.alpha.sekiroBedwar.api.internal.SekiroApiImpl.toolUse(player.getUniqueId(),
+                    org.alpha.sekiroBedwar.api.ToolId.DRIFTING_PAPER_DOLL, null,
+                    org.alpha.sekiroBedwar.api.ToolUseResult.REJECTED);
             return; // 血量不足阈值，不可用
         }
         if (!consumeDrifting(player, 1)) {
@@ -135,6 +138,9 @@ public final class DriftingPaperDollManager {
         }
         reduceMaxHealth(player);
         paperDollManager.givePaperDolls(player, config.driftingPaperDollsGranted());
+        org.alpha.sekiroBedwar.api.internal.SekiroApiImpl.toolUse(player.getUniqueId(),
+                org.alpha.sekiroBedwar.api.ToolId.DRIFTING_PAPER_DOLL, null,
+                org.alpha.sekiroBedwar.api.ToolUseResult.SUCCESS);
     }
 
     private void reduceMaxHealth(Player player) {

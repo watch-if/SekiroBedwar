@@ -154,6 +154,11 @@ public final class AttributeManager {
         st.lastHit.put(a, now);
         if (count >= required) {
             st.windowUntil.put(a, now + windowMs); // 达标开窗；窗口内每次命中续窗
+            if (!inWindow) { // 公共忍具事件：仅"开启新窗口"时刻上报（续窗不重复）
+                org.alpha.sekiroBedwar.api.internal.SekiroApiImpl.toolUse(a,
+                        isRust ? org.alpha.sekiroBedwar.api.ToolId.RUST : org.alpha.sekiroBedwar.api.ToolId.BURN,
+                        victim.getUniqueId(), org.alpha.sekiroBedwar.api.ToolUseResult.SUCCESS);
+            }
         }
     }
 

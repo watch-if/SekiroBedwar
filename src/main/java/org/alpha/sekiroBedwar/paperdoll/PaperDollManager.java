@@ -139,6 +139,9 @@ public final class PaperDollManager {
             return;
         }
         consumePaperDolls(shooter, config.throwCost());
+        org.alpha.sekiroBedwar.api.internal.SekiroApiImpl.toolUse(shooter.getUniqueId(),
+                org.alpha.sekiroBedwar.api.ToolId.PAPER_DOLL, null,
+                org.alpha.sekiroBedwar.api.ToolUseResult.SUCCESS); // 投掷抵扣（忍具资源使用）
         Material refund = refundMaterial(projectile);
         if (refund != null) {
             ItemStack item = new ItemStack(refund);
@@ -210,6 +213,9 @@ public final class PaperDollManager {
         markedTargets.remove(attacker.getUniqueId());
         consumePaperDolls(attacker, config.teleportCost());
         attacker.teleport(findSafeLocation(victim));
+        org.alpha.sekiroBedwar.api.internal.SekiroApiImpl.toolUse(attacker.getUniqueId(),
+                org.alpha.sekiroBedwar.api.ToolId.PAPER_DOLL, victim.getUniqueId(),
+                org.alpha.sekiroBedwar.api.ToolUseResult.SUCCESS); // 命中后传送（近战追加路径）
     }
 
     /** 左键（挥臂）触发传送：投掷物命中标记目标且在窗口内 → 传送并消耗纸人（不需近战打中）。 */
@@ -234,6 +240,9 @@ public final class PaperDollManager {
         if (target != null && target.isOnline()) {
             attacker.teleport(findSafeLocation(target));
         }
+        org.alpha.sekiroBedwar.api.internal.SekiroApiImpl.toolUse(attacker.getUniqueId(),
+                org.alpha.sekiroBedwar.api.ToolId.PAPER_DOLL, mark.target,
+                org.alpha.sekiroBedwar.api.ToolUseResult.SUCCESS); // 命中后传送（左键路径）
     }
 
     private Location findSafeLocation(Player target) {

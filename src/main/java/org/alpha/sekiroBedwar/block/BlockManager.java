@@ -127,25 +127,40 @@ public final class BlockManager {
             if (dangerManager.isDangerAttack(event)) {
                 // 危格挡：破盾 + 防守方扣 15 架势（不可完美弹反，直接受破盾惩罚）。
                 dangerManager.applyShieldBreak(victim);
+                org.alpha.sekiroBedwar.api.internal.SekiroApiImpl.shieldBreak(victim.getUniqueId(),
+                        attacker.getUniqueId(), org.alpha.sekiroBedwar.api.events.ShieldBreakEvent.Cause.DANGER,
+                        dangerManager.stancePenalty());
             } else {
                 // 普通格挡（ΔS格挡）：不完全免架势——防守方架势 -= Dbase（武器面板伤害）× defender-multiplier。
                 // 攻击方不扣架势。
                 // 破盾：攻击方主手为配置的破盾武器（斧）→ 更高倍率扣减 + 短暂禁用防守方格挡。
                 double db = CombatUtils.baseDamage(attacker, event);
+                boolean projectile = CombatUtils.resolveMeleeAttacker(event) == null;
                 if (config.shieldBreakEnabled() && isShieldBreaker(attacker)) {
                     stanceManager.disableBlocking(victim.getUniqueId(), config.shieldBreakDisableBlockingSeconds());
                     int ticks = Math.max(1, (int) Math.ceil(config.shieldBreakDisableBlockingSeconds() * 20.0));
                     victim.setCooldown(Material.SHIELD, ticks);
-                    stanceManager.reduceStance(victim.getUniqueId(), db * config.shieldBreakStanceMultiplier());
+                    double loss = db * config.shieldBreakStanceMultiplier();
+                    stanceManager.reduceStance(victim.getUniqueId(), loss);
+                    org.alpha.sekiroBedwar.api.internal.SekiroApiImpl.shieldBreak(victim.getUniqueId(),
+                            attacker.getUniqueId(), org.alpha.sekiroBedwar.api.events.ShieldBreakEvent.Cause.AXE, loss);
                 } else {
-                    stanceManager.reduceStance(victim.getUniqueId(), db * config.defenderMultiplier());
+                    double loss = db * config.defenderMultiplier();
+                    stanceManager.reduceStance(victim.getUniqueId(), loss);
+                    org.alpha.sekiroBedwar.api.internal.SekiroApiImpl.block(victim.getUniqueId(),
+                            attacker.getUniqueId(), attacker.getInventory().getItemInMainHand().getType(),
+                            loss, projectile);
                 }
             }
         } else {
             // 无格挡命中（ΔS肉）：受击方架势 -= Dactual（实机血量伤害）× hit-multiplier
             double actual = event.getFinalDamage();
             if (actual > 0.0) {
-                stanceManager.reduceStance(victim.getUniqueId(), actual * config.hitMultiplier());
+                double loss = actual * config.hitMultiplier();
+                stanceManager.reduceStance(victim.getUniqueId(), loss);
+                org.alpha.sekiroBedwar.api.internal.SekiroApiImpl.hitLanded(attacker.getUniqueId(),
+                        victim.getUniqueId(), attacker.getInventory().getItemInMainHand().getType(),
+                        loss, actual, CombatUtils.resolveMeleeAttacker(event) != null);
             }
         }
         if (CombatUtils.resolveMeleeAttacker(event) != null) {

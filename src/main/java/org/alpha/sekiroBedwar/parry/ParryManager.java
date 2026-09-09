@@ -187,7 +187,7 @@ public final class ParryManager {
         // 崩条判定：在扣架势【之前】评估攻击方是否本就处于临界——弹反惩罚（Dbase×乘数）
         // 扣到 0 不算临界，只有【本就临界】的玩家近战攻击被完美弹反才触发架势崩溃
         //（崩条触发规则：临界 + 近战被弹反）。
-        stanceBreakManager.onAttackParried(attacker);
+        stanceBreakManager.onAttackParried(attacker, victim);
         // 完美弹反惩罚：攻击方架势 -= Dbase（武器面板伤害）× parry-attacker-multiplier。
         stanceManager.reduceStance(attacker.getUniqueId(), db * config.parryAttackerMultiplier());
         // 弹反者自身架势 - parry-victim-cost（0 = 不扣自身架势）；
@@ -209,6 +209,9 @@ public final class ParryManager {
         lightningManager.onAttack(attacker, victim, true);
         attributeManager.onAttack(attacker, victim, true); // 锈丸/炎上：被完美弹反清零连续计数
         mysteryManager.onAttack(attacker, victim, true);   // 秘传：被弹反仍算打出的一击（第 6 击加成除外）
+        org.alpha.sekiroBedwar.api.internal.SekiroApiImpl.perfectParry(victim.getUniqueId(),
+                attacker.getUniqueId(), attacker.getInventory().getItemInMainHand().getType(),
+                db * config.parryAttackerMultiplier());
     }
 
     /**

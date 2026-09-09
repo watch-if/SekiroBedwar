@@ -126,16 +126,31 @@ public final class DangerManager {
         if (!isDangerAttack(event)) {
             return;
         }
+        Player dangerAttacker = CombatUtils.resolveMeleeAttacker(event);
         if (!isMikiri(victim)) {
+            if (dangerAttacker != null) {
+                org.alpha.sekiroBedwar.api.internal.SekiroApiImpl.dangerAttack(
+                        dangerAttacker.getUniqueId(), victim.getUniqueId(), victim.isBlocking(), false);
+            }
             return;
         }
-        Player attacker = CombatUtils.resolveMeleeAttacker(event);
+        Player attacker = dangerAttacker;
         event.setCancelled(true);
         sneakStart.remove(victim.getUniqueId());
         if (attacker != null) {
             stanceManager.reduceStance(attacker.getUniqueId(), config.stancePenalty());
             stanceManager.markActive(attacker.getUniqueId());
         }
+        org.alpha.sekiroBedwar.api.internal.SekiroApiImpl.dangerAttack(
+                attacker == null ? null : attacker.getUniqueId(), victim.getUniqueId(),
+                victim.isBlocking(), true);
+        org.alpha.sekiroBedwar.api.internal.SekiroApiImpl.mikiri(victim.getUniqueId(),
+                attacker == null ? null : attacker.getUniqueId());
+    }
+
+    /** 危格挡 / 识破的架势惩罚值（公共事件数据用；同 {@code danger.stance-penalty}）。 */
+    public double stancePenalty() {
+        return config.stancePenalty();
     }
 
     /** 危格挡惩罚：破盾 + 防守方扣架势。 */

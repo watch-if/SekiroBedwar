@@ -61,6 +61,8 @@ public final class FeiduFuzhou implements Mystery {
 
         if (p == null) {
             progress.put(uuid, new ComboProgress(now));
+            org.alpha.sekiroBedwar.api.internal.SekiroApiImpl.techStart(uuid,
+                    org.alpha.sekiroBedwar.api.TechniqueId.FEIDU_FUZU); // 公共 API：第一击 = 连段启动
             return;
         }
         if (p.hits >= totalHits) {
@@ -70,11 +72,29 @@ public final class FeiduFuzhou implements Mystery {
         long expected = Math.round(intervals[p.hits] * 50.0); // p.hits = 已完成击数 = 间隔下标
         long delta = now - p.lastHitMs;
         if (delta < expected - targetWindow || delta > expected + targetWindow) {
+            org.alpha.sekiroBedwar.api.internal.SekiroApiImpl.techFail(uuid,
+                    org.alpha.sekiroBedwar.api.TechniqueId.FEIDU_FUZU,
+                    org.alpha.sekiroBedwar.api.TechniqueFailReason.OUT_OF_RHYTHM, p.hits);
+            // 脱拍音只在一段连续脱拍中播一次（后续继续乱挥不连播，直到某段成功接上才重置）
+            if (!p.breakNotified) {
+                attacker.playSound(attacker.getLocation(), Sound.BLOCK_ANVIL_USE, 1.0f, 1.0f);
+                p.breakNotified = true;
+            }
             p.restart(now); // 本击脱拍：作为新的一式
             return;
         }
         p.hits++;
         p.lastHitMs = now;
+        p.breakNotified = false; // 成功接段：脱拍提示复位
+        if (!parried) {
+            p.validHits++; // 公共完成事件的有效击统计
+        }
+        org.alpha.sekiroBedwar.api.internal.SekiroApiImpl.techHit(uuid,
+                org.alpha.sekiroBedwar.api.TechniqueId.FEIDU_FUZU, p.hits, parried, victim.getUniqueId());
+        // 第 3 段（第 4 击）起每段成功 = 铁砧落地音；第 7 击由完成奖励统一播（不叠加）
+        if (p.hits >= 4 && p.hits < totalHits) {
+            attacker.playSound(attacker.getLocation(), Sound.BLOCK_ANVIL_LAND, 1.0f, 1.0f);
+        }
 
         if (p.hits == totalHits - 1 && !parried) {
             // 第 6 击：有效命中（未被完美弹反）额外追加架势伤害
@@ -83,6 +103,8 @@ public final class FeiduFuzhou implements Mystery {
         if (p.hits == totalHits) {
             progress.remove(uuid);
             complete(attacker);
+            org.alpha.sekiroBedwar.api.internal.SekiroApiImpl.techComplete(uuid,
+                    org.alpha.sekiroBedwar.api.TechniqueId.FEIDU_FUZU, totalHits, p.validHits);
         }
     }
 
@@ -107,8 +129,12 @@ public final class FeiduFuzhou implements Mystery {
     }
 
     @Override
-    public void clear(UUID player) {
-        progress.remove(player);
+    public void clear(UUID player, org.alpha.sekiroBedwar.api.TechniqueCancelReason reason) {
+        ComboProgress p = progress.remove(player);
+        if (p != null) { // 进行中的连段被生命周期中止：公共 API Cancel（Fail 之外的另一种终结）
+            org.alpha.sekiroBedwar.api.internal.SekiroApiImpl.techCancel(player,
+                    org.alpha.sekiroBedwar.api.TechniqueId.FEIDU_FUZU, reason, p.hits);
+        }
     }
 
     @Override
@@ -116,10 +142,12 @@ public final class FeiduFuzhou implements Mystery {
         progress.clear();
     }
 
-    /** 连击进度：已完成击数 + 上一击时刻（单调毫秒）。 */
+    /** 连击进度：已完成击数 + 上一击时刻（单调毫秒）+ 本轮脱拍是否已提示 + 有效击计数。 */
     private static final class ComboProgress {
         int hits;
         long lastHitMs;
+        boolean breakNotified;
+        int validHits;
 
         ComboProgress(long firstHitMs) {
             this.hits = 1;

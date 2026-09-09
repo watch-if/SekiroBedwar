@@ -29,6 +29,7 @@
 | **决斗结算** (`SettlementManager`) | 各情形按比例把资源直接转入对方背包；玩家死亡一切物品不掉落（未转移部分清除）；第三方介入回滚快照 |
 | **决斗区域限制** (`DuelAreaGuard`) | 决斗期间不能主动离开白圈、搭路越界、传送越界（击退位移豁免） |
 | **决斗冻结** (`freeze`) | 白圈内物资刷新暂停、队伍复活挂起、决斗双方方块保护 |
+| **红圈生物禁令** (`MobBanManager`) | 决斗红圈（与第三方排除同半径）内禁止铁傀儡 / 羊（TNT 羊）以任何途径生成；圈内一切非玩家生物进圈即被移除（无掉落无死亡消息） |
 | **忍具商店** (`SekiroShopManager`) | 插件自管 GUI 商店：接管商店主页右下「下一页」按钮位为入口，全部插件商品（攻速/巴之雷/锈丸/炎上/还原/长矛/纸人/漂流纸人/雾璃鸦/风弹/佛珠/盾牌）的判定、扣费、发放都在本插件内完成，动态价格实时渲染 |
 | **剑攻速强化** (`SpeedManager`) | 忍具商店单按钮逐级购买（按钮显示下一级，买后自动更新），降低近战攻击冷却 |
 | **剑格挡** (`SwordBlockingManager`) | 1.21.8+ 给剑赋予盾牌格挡能力（blocks_attacks 组件，右键举盾、可被斧破盾） |
@@ -46,7 +47,9 @@
 | **取消耐久** (`DurabilityGuardManager`) | 物品不再损失耐久，按类别开关：护甲（默认开）/ 工具武器（默认关）/ 盾牌（默认关，保留格挡磨损风味） |
 | **危攻击 / 识破** (`DangerManager`) | 矛+突进附魔疾跑攻击为「危」，不可弹反、格挡破盾；识破（下蹲170ms内接危）反击 |
 | **秘传·飞渡浮舟** (`MysteryManager` + `FeiduFuzhou`) | 第一秘传：特定节奏七段近战连击（间隔序列 7.3/10/5.7/5.3/5.7/16 tick，各 ±0.2 容差）——第 6 击有效命中额外扣对手 10 架势；七击全达标奖 2 纸人 + 5 架势 + 1 HP；框架预留后续秘传 |
-| **秘传·苇名十字斩** (`YamedoCrossSlash`) | 第二秘传：主手持续空手 ≥0.5s 后换持近战武器（剑/斧/矛）起手，两击命时间隔 4 tick（±0.5）；第二击有效命中 → 击退 II + 对方 −7 架势 + 自身 +3 架势 |
+| **秘传·苇名十字斩** (`YamedoCrossSlash`) | 第二秘传：主手持续空手 0.5~1s 后换持近战武器（剑/斧/矛）起手，两击命时间隔 4 tick（±0.5）；第二击有效命中 → 击退 II + 对方 −7 架势 + 自身 +3 架势 |
+| **秘传·龙闪** (`LongShan`) | 第三秘传：空手 ≥1s 换刀后左键释放（耗 2 纸人 + 铁砧落地音），朝面向放出监守者音波式飞行波柱（判定路径向上 4 格），飞出白圈即止，命中玩家 2HP+10 架势；隔 1s 同位置同方向自动补射第二波 |
+| **秘传·一心七连** (`IsshinSevenStrike`) | 第四秘传：七段近战连击（间隔 7/5/5/6/8/10 tick ±0.2）；第 3 段起每段成功播落地音、有效击逐段叠加架势增伤（−3/−6/−9/−12）；**第 7 击必须是危攻击**（矛+突进+疾跑）否则不算完成；全段达成奖 2 纸人 + 4 架势 |
 | **无敌帧开关** (`IFrameManager`) | 原版受击保护帧双开关：全局默认**有**、决斗期间默认**无**（拼刀连击不被保护帧吞伤害，与秘传节奏配套）；周期巡检幂等应用 |
 | **佛珠** (`BeadManager`) | 忍具商店购买（单局上限 4 次、每次 +5 最大血量、价格递增），全局增益 |
 | **僵尸头颅 / 恐怖条** (`TerrorManager`) | 击杀 50% 掉头颅；左键使用施加反胃+扣血+隐藏恐怖值，恐怖满瞬秒 |
@@ -92,7 +95,13 @@ W    = Σ (coeff × ln(1 + count))      // count 为背包中该资源数量
 
 **第一秘传·飞渡浮舟**（全局生效，无需购买，完成音效为铁砧落地声）：按精确节奏打出七段近战连击——相邻两击的间隔须依次落在 **7.3 / 10 / 5.7 / 5.3 / 5.7 / 16 tick**（毫秒 = tick×50）各值 **±0.2 tick** 内（服务器单调时钟计时；仅 ACTIVE 决斗内命中进序列，被完美弹反的命中仍算打出的一击）。长间隔窗口（如 2→3、6→7 之间）允许右键格挡或投掷投掷物——不产生近战命中的动作不进序列也不打断。**第 6 击有效命中**（未被完美弹反）：受击方在普通架势换算外**额外 −10 架势**。**七击全部达标**：攻击方得 **2 纸人**（可超持有上限）**+ 恢复 5 架势 + 1 HP** + 完成音效（无文字）。任何一击脱拍则本击作为新的一式从头重连。秘传为可扩展框架（`Mystery` 接口），后续武技只需实现接口并登记。全部数字在 `mystery.fei-du-fu-zhou` 段可改。
 
-**第二秘传·苇名十字斩**（全局生效，无需购买）：起手姿势是**持续空手**——主手连续空置 **≥0.5 秒**（1 tick 巡检跟踪主手空/持物转换，快捷栏切换或背包换持皆覆盖）后持上近战武器（剑/斧/矛）才进入「已武装」。第一击（持武器的近战命中，被弹反也算打出）起计时，第二击的**命时间隔**须落在 **4 tick ±0.5**（即 200ms±25ms）内——早了晚了都脱拍。**第二段为有效攻击（未被完美弹反）**：受击方被**击退**（等同原版击退 II 附魔级别）+ 架势**额外 −7**，自身架势**恢复 +3** + 铁砧落地音效（与飞渡浮舟完成音同款，无文字）。第二击脱拍或被弹反 → 二连终结，须重新「空手 ≥0.5s + 换刀」才能再起（第一击的空手硬约束不因脱拍继承）。数值（含空手时长 `min-empty-hand-seconds`）在 `mystery.yamedo-cross-slash` 段可改。
+三式共用同一音效语言：**成功接段 = 铁砧落地声，脱拍 = 铁砧打磨声**（打磨音在一次连续脱拍链中只播一次，直到某段成功接上才复位）——飞渡浮舟自第 3 段起每段成功播落地音、脱拍播一次打磨音（完成音仍为落地）；苇名十字斩第二击接上播落地、脱拍播打磨；龙闪释放播落地。此外**换刀后的起手动作须在 1 tick 内衔接**（苇名第一击 / 龙闪左键释放），超时也算脱拍（打磨音、武装作废）。
+
+**第二秘传·苇名十字斩**（全局生效，无需购买）：起手姿势是**持续空手 0.5~1 秒窗口**（≥1s 让位龙闪，两式互斥）——主手连续空置达标后快捷栏换持近战武器（剑/斧/矛）即进入「已武装」（切换事件即时触发，第一击须在**换刀后 1 tick 内**打出，超时算脱拍作废）。第一击（持武器的近战命中，被弹反也算打出）起计时，第二击的**命时间隔**须落在 **4 tick ±0.5**（即 200ms±25ms）内——早了晚了都脱拍。**第二段为有效攻击（未被完美弹反）**：受击方被**击退**（等同原版击退 II 附魔级别）+ 架势**额外 −7**，自身架势**恢复 +3** + 铁砧落地音效（与飞渡浮舟完成音同款，无文字）。第二击脱拍或被弹反 → 二连终结，须重新「空手 ≥0.5s + 换刀」才能再起（第一击的空手硬约束不因脱拍继承）。数值（含空手时长窗口 `min/max-empty-hand-seconds`）在 `mystery.yamedo-cross-slash` 段可改。
+
+**第三秘传·龙闪**（全局生效，无需购买）：主手**持续空手 ≥1 秒**（与苇名的 0.5~1s 窗口互斥，切换瞬间空手时长只有一个值，两式判定不重叠）后换持近战武器即「已武装」，此时须在**换刀后 1 tick 内左键挥臂**释放（超时算脱拍：打磨音、武装作废；不取消普通攻击）：消耗 **2 纸人** + 铁砧落地音，朝玩家**面朝方向**放出一道**监守者音波式飞行波柱**——每 tick 前进（默认 1.5 格/刻），判定路径覆盖脚位起**向上 4 格**，**飞出决斗白圈（`visuals.inner-radius`）时特效与伤害判定同时结束**（非决斗场景按固定距离终止）。碰到的玩家（释放者除外）受 **2 HP 泛型直伤**（不走格挡/弹反换算，完美弹反也挡不住波）+ **10 架势伤害**，每波每人只判定一次。第一波放出后隔 **1 秒**，在**同一触发位置、同一方向**自动补射第二波（伤害相同、不二次扣纸人；释放瞬间位置/方向已快照，玩家移动转头不影响）。纸人不足则低音提示、解除武装。全部数值在 `mystery.long-shan` 段可改。
+
+**第四秘传·一心七连**（全局生效，无需购买）：七段近战连击，相邻命时间隔依次 **7 / 5 / 5 / 6 / 8 / 10 tick（各 ±0.2）**。自**第 3 段**（第 4 击）起每段成功播铁砧落地音，且**该段为有效攻击（未被完美弹反）时**受击方在普通换算外被额外扣架势——按已叠有效段数**递增**：第 3 段 −3、第 4 段也有效再 −6、第 5 段 −9、第 6 段 −12（被弹反的段不叠加但连段继续）。**第 7 击必须是危攻击**（主手矛 + 突进 LUNGE + 疾跑，与危模块同口径；危本身不可被弹反）——非危的第七击**不算完成全段**：打磨音提示、本击作为新一式重连。6→7 段长窗口允许右键格挡 / 投掷投掷物（不中断连段）。完成全段奖励 **2 纸人 + 恢复 4 架势** + 完成落地音。全部数值在 `mystery.isshin-seven-strike` 段可改。
 
 ### 盾牌弹反
 
@@ -187,6 +196,7 @@ mvn clean package
 | `visuals` | 红白双圈粒子、高亮 |
 | `duel` / `area` | 决斗生命周期与区域限制 |
 | `freeze` | 物资刷新冻结、队伍复活冻结、方块保护 |
+| `mob-ban` | 红圈生物禁令（总开关、禁生生物列表、进圈清除开关、垂直容差、巡检间隔） |
 | `sword-speed` | 剑攻速强化等级（逐级购买）、价格 |
 | `sword-blocking` | 剑格挡 |
 | `lightning` | 巴之雷（雷击、三连击、三叉戟、雷反、商店价格） |
@@ -197,7 +207,7 @@ mvn clean package
 | `deflect` | 盾牌弹反（纸人消耗、完美弹反窗口时长） |
 | `danger` | 危攻击/识破（架势惩罚、识破窗口、破盾时长） |
 | `iframe` | 无敌帧开关（全局 / 决斗双开关 + 巡检间隔） |
-| `mystery` | 秘传框架（第一式·飞渡浮舟：连击间隔序列 / 容差 / 第 6 击架势加成 / 完成奖励；第二式·苇名十字斩：二连间隔 / 容差 / 击退级别 / 架势扣减与恢复） |
+| `mystery` | 秘传框架（`arm-connect-ticks` 换刀→起手动作衔接窗；第一式·飞渡浮舟：连击间隔序列 / 容差 / 第 6 击架势加成 / 完成奖励；第二式·苇名十字斩：空手窗口 / 二连间隔 / 容差 / 击退级别 / 架势扣减与恢复；第三式·龙闪：空手时长 / 纸人消耗 / 二段波延迟 / 波速 / 粒子 / 判定半径与高度 / 伤害；第四式·一心七连：间隔序列 / 容差 / 逐段叠加增伤基数 / 完成奖励） |
 | `bead` | 佛珠（购买上限、每颗血量、价格递增） |
 | `crow` | 雾璃鸦（商店价格、纸人消耗、悬停时长、破碎概率、每局限购（计数判定）、补给冷却） |
 | `wind-charge` | 风弹（商店价格、爆风墙半椭圆几何 depth/width/height、扫过与停留时长、粒子名、采样密度、触碰半径、封印时长、不可叠加窗口） |
@@ -217,6 +227,8 @@ mvn clean package
 ```
 src/main/java/org/alpha/sekiroBedwar/
 ├── SekiroBedwar.java        # 插件主类：模块装配与生命周期
+├── api/                     # 公共 API：只读查询 + 事件（外部插件只依赖此包）
+│   └── internal/            # API 发射器与快照转换（核心侧，外部禁止依赖）
 ├── armory/                  # 护甲商店（分类劫持 + 套装页 + 档位制）
 ├── block/                   # 普通格挡 / 受击架势
 ├── attribute/               # 属性伤害专精（锈丸 / 炎上 / 还原，三选一互斥）
@@ -229,6 +241,7 @@ src/main/java/org/alpha/sekiroBedwar/
 ├── equip/                   # 自动装备 + 取消耐久
 ├── event/                   # DuelTriggeredEvent / DuelEndedEvent 自定义事件
 ├── freeze/                  # 物资刷新冻结、复活冻结、方块保护
+├── mobban/                  # 红圈生物禁令（禁生傀儡/TNT羊 + 进圈清除）
 ├── lightning/               # 巴之雷（雷击 / 雷反）
 ├── mystery/                 # 秘传（无敌帧开关 + 武技框架 + 飞渡浮舟）
 ├── paperdoll/               # 纸人（忍具系统铺垫资源）
@@ -240,6 +253,71 @@ src/main/java/org/alpha/sekiroBedwar/
 ├── windcharge/              # 风弹（爆风墙投掷忍具）
 └── swordblock/              # 剑格挡（1.21.8+）
 ```
+
+---
+
+## 公共 API（供外部插件开发）
+
+SekiroBedwar 是**战斗规则核心**：它只产生稳定的战斗事件与只读查询；统计（连段使用率 / 成功率）、排位 / MMR、排行榜、录像、打法评价等业务**一律不写在核心内**——外部插件监听事件即可自行实现（未来 `SekiroBedwar-Stats` / `SekiroBedwar-Rank` / `SekiroBedwar-Replay` 同此模式）。
+
+**依赖方式**：外部插件 `plugin.yml` 写 `depend: [SekiroBedwar]`，编译期引用本 jar，只用 `org.alpha.sekiroBedwar.api` 包（`api.internal` 为核心侧发射器，外部**禁止**依赖）。所有事件只读、不可取消——外部不能绕过核心规则改战斗。
+
+### 只读查询（`SekiroBedwarApi`）
+
+| 方法 | 用途 |
+| --- | --- |
+| `isInDuel(Player/UUID)` | 是否在决斗中 |
+| `duelOf(...)` / `duelOpponentOf(...)` / `activeDuels()` | 决斗只读快照（双方 / 对手 / 阶段 / 时长） |
+| `stanceOf(Player/UUID)` | 架势只读快照（当前/最大/阶段/临界/崩条/禁格挡），**无写入口** |
+| `techniques()` / `tools()` | 已实现的秘传 / 忍具 id 注册表 |
+
+### 事件（`api.events`，均异步广播于主线程）
+
+| 组 | 事件 |
+| --- | --- |
+| 决斗 | `DuelStartEvent` / `DuelEndEvent` / `DuelInterruptEvent`（第三方中断）/ `DuelDeathEvent`（击杀 / 虚空）/ `DuelSettlementEvent`（转移比例 + 到手资源明细，或回滚） |
+| 架势 | `StanceChangeEvent`（数值变化，自然恢复不刷屏）/ `StanceBreakEvent`（崩条，含对手）/ `StanceCriticalEnterEvent`（进入临界） |
+| 战斗 | `PerfectParryEvent` / `BlockEvent` / `ShieldBreakEvent`（AXE / DANGER）/ `HitLandedEvent`（无格挡命中）/ `DangerAttackEvent`（危）/ `MikiriEvent`（识破） |
+| 秘传 | `SecretTechniqueStartEvent` / `HitEvent`（段成功，带 hitIndex/parried/target）/ `CompleteEvent` / `FailEvent`（脱拍 / 衔接超时 / 资源不足 / 终结不满足）/ `BranchEvent`（派生预留）/ `CancelEvent`（死亡 / 决斗结束等中止）——统一以 `TechniqueId` 标识，**成功 / 脱拍音效由核心统一播放** |
+| 忍具 | `ShinobiToolUseEvent`（`ToolId` + target + `ToolUseResult`：纸人 / 漂流纸人 / 雾璃鸦 / 风弹 / 落雷 / 雷反 / 盾牌弹反 / 锈丸 / 炎上 / 僵尸头颅） |
+
+**扩展性承诺**：新增秘传 = `TechniqueId` 新枚举值 + 核心发同一组事件；新增忍具 = `ToolId` 新枚举值。外部统计 / 排位 / 录像插件**无需改代码或改 API 结构**（按 id 消费 + `default` 兜底未知值即可）。
+
+### 第三方插件示例（连段成功率统计）
+
+```java
+public final class SekiroBedwarStats extends JavaPlugin {
+    @EventHandler
+    public void onDuelStart(org.alpha.sekiroBedwar.api.events.DuelStartEvent e) {
+        // e.duel() 提供双方 UUID / 阶段 / 时长（只读快照）
+    }
+
+    @EventHandler
+    public void onTechStart(org.alpha.sekiroBedwar.api.events.SecretTechniqueStartEvent e) {
+        counter(e.player(), e.technique()).start++;           // 例：FEIDU_FUZU / ISSHIN_SEVEN_STRIKE
+    }
+
+    @EventHandler
+    public void onTechComplete(org.alpha.sekiroBedwar.api.events.SecretTechniqueCompleteEvent e) {
+        var c = counter(e.player(), e.technique());
+        c.complete++; c.validHits += e.validHits();            // 成功率 = complete / start
+    }
+
+    @EventHandler
+    public void onTechFail(org.alpha.sekiroBedwar.api.events.SecretTechniqueFailEvent e) {
+        counter(e.player(), e.technique()).fail++;
+        // e.reason(): OUT_OF_RHYTHM / CONNECT_TIMEOUT / FINISHER_NOT_MET / INSUFFICIENT_RESOURCE
+        // e.reachedHits(): 平均连段长度统计用
+    }
+
+    @EventHandler
+    public void onSettle(org.alpha.sekiroBedwar.api.events.DuelSettlementEvent e) {
+        // e.winner()/loser()/ratio()/received() —— 排位 MMR 消费结算事实，勿改核心规则
+    }
+}
+```
+
+`plugin.yml`：`depend: [SekiroBedwar]`。查询侧随时可用 `SekiroBedwarApi.duelOf(player)` / `stanceOf(player)` 读取当前决斗与架势快照（如录像插件按 tick 采样 `StanceSnapshot` 回放架势曲线）。
 
 ---
 

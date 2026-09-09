@@ -132,6 +132,9 @@ public final class WindChargeManager {
                 base.getX(), base.getY(), base.getZ(), fx, fz, lx, lz,
                 config.depth(), config.width(), config.height(), config.points(),
                 now(), config.sweepMs(), config.lingerMs()));
+        org.alpha.sekiroBedwar.api.internal.SekiroApiImpl.toolUse(caster.getUniqueId(),
+                org.alpha.sekiroBedwar.api.ToolId.WIND_CHARGE, null,
+                org.alpha.sekiroBedwar.api.ToolUseResult.SUCCESS);
     }
 
     // ============ 每 tick：渲染 + 触碰判定 + 惰性清理 ============
@@ -200,6 +203,9 @@ public final class WindChargeManager {
             }
             if (minSq <= r * r) {
                 applyTouch(player, now);
+                org.alpha.sekiroBedwar.api.internal.SekiroApiImpl.toolUse(wall.caster,
+                        org.alpha.sekiroBedwar.api.ToolId.WIND_CHARGE, player.getUniqueId(),
+                        org.alpha.sekiroBedwar.api.ToolUseResult.SUCCESS);
             }
         }
     }

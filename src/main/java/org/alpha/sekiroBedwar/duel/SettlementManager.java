@@ -131,7 +131,8 @@ public final class SettlementManager {
             // 虚空死亡（被击落虚空 = 决斗死亡）：按虚空比例结算并记录胜者。
             // 死亡瞬间死者背包已被清空（物品全部移入 event.getDrops()），故从掉落列表结算。
             if (isVoidDeath(victim)) {
-                settleFromDrops(event, victim, opponent, settlementConfig.voidKillRatio());
+                Map<Material, Integer> got = settleFromDrops(event, victim, opponent, settlementConfig.voidKillRatio());
+                emitDeathAndSettlement(duel, opponent, victim, settlementConfig.voidKillRatio(), got, true);
                 duelManager.endDuel(duel, EndReason.VOID_DEATH);
                 return;
             }
@@ -140,7 +141,8 @@ public final class SettlementManager {
                 double ratio = stanceManager.isBroken(victim.getUniqueId())
                         ? settlementConfig.breakKillRatio()
                         : settlementConfig.normalKillRatio();
-                settleFromDrops(event, victim, opponent, ratio);
+                Map<Material, Integer> got = settleFromDrops(event, victim, opponent, ratio);
+                emitDeathAndSettlement(duel, opponent, victim, ratio, got, false);
                 duelManager.endDuel(duel, EndReason.EXECUTED);
             }
         } finally {
@@ -174,10 +176,12 @@ public final class SettlementManager {
                 continue;
             }
             if (stanceManager.isExecutionWindowExpired(duel.getPlayerAUuid())) {
-                settle(a, b, settlementConfig.breakKillRatio());
+                Map<Material, Integer> got = settle(a, b, settlementConfig.breakKillRatio());
+                emitSettlement(duel, b, a, settlementConfig.breakKillRatio(), got);
                 duelManager.endDuel(duel, EndReason.EXECUTION_TIMEOUT);
             } else if (stanceManager.isExecutionWindowExpired(duel.getPlayerBUuid())) {
-                settle(b, a, settlementConfig.breakKillRatio());
+                Map<Material, Integer> got = settle(b, a, settlementConfig.breakKillRatio());
+                emitSettlement(duel, a, b, settlementConfig.breakKillRatio(), got);
                 duelManager.endDuel(duel, EndReason.EXECUTION_TIMEOUT);
             }
         }
@@ -202,6 +206,9 @@ public final class SettlementManager {
         }
         restoreIfOnline(event.getPlayerA(), snapA);
         restoreIfOnline(event.getPlayerB(), snapB);
+        org.alpha.sekiroBedwar.api.internal.SekiroApiImpl.duelSettlement(duel,
+                org.alpha.sekiroBedwar.api.events.DuelSettlementEvent.Outcome.ROLLBACK,
+                null, null, 0.0, Map.of());
     }
 
     /** 决斗开始时补记双方资源快照（幂等；PENDING 期不记，ACTIVE 后首轮补上）。 */
@@ -321,10 +328,13 @@ public final class SettlementManager {
      * 结算：把 {@code from} 背包中配置资源类型物品的 {@code ratio} 比例转移给 {@code to}。
      * {@code ratio}=1.0 全额、0.5 半额（每种资源数量各自向下取整）。
      * 只转移配置资源类型，不触碰其余物品；{@code to} 背包满装不下的部分还给 {@code from}。
+     *
+     * @return 胜者实际应得（按类型汇总）的转移数量（公共结算事件的 received 数据）
      */
-    private void settle(Player from, Player to, double ratio) {
+    private Map<Material, Integer> settle(Player from, Player to, double ratio) {
+        Map<Material, Integer> got = new HashMap<>();
         if (from == null || to == null || !from.isOnline() || !to.isOnline()) {
-            return;
+            return got;
         }
         Set<Material> resources = config.resourceCoefficients().keySet();
         ItemStack[] contents = from.getInventory().getContents();
@@ -337,6 +347,7 @@ public final class SettlementManager {
             if (take <= 0) {
                 continue;
             }
+            got.merge(item.getType(), take, Integer::sum);
             // 保留原物品（自定义显示名 / NBT，如 BedWars 资源的 "Iron"），只改数量——
             // 转移"原模原样"：折算对方背包应扣除的数量、以原标签加回自己背包，
             // 避免重建裸物品丢掉标签（显示成"铁锭"等默认名）。
@@ -353,6 +364,7 @@ public final class SettlementManager {
                 from.getInventory().addItem(rest);
             }
         }
+        return got;
     }
 
     /**
@@ -361,10 +373,13 @@ public final class SettlementManager {
      * 背包此刻为空），因此直接在掉落列表上转移配置资源给胜者，而非读空背包。
      * 转移部分直接进胜者背包；剩余份额与胜者背包装不下的溢出都不再落地
      * （调用方随后清空整个掉落列表 = 死亡不掉落）。
+     *
+     * @return 胜者实际应得（按类型汇总）的转移数量（公共结算事件的 received 数据）
      */
-    private void settleFromDrops(PlayerDeathEvent event, Player from, Player to, double ratio) {
+    private Map<Material, Integer> settleFromDrops(PlayerDeathEvent event, Player from, Player to, double ratio) {
+        Map<Material, Integer> got = new HashMap<>();
         if (from == null || to == null || !from.isOnline() || !to.isOnline()) {
-            return;
+            return got;
         }
         Set<Material> resources = config.resourceCoefficients().keySet();
         List<ItemStack> drops = event.getDrops();
@@ -377,6 +392,7 @@ public final class SettlementManager {
             if (take <= 0) {
                 continue;
             }
+            got.merge(item.getType(), take, Integer::sum);
             // 保留原物品（自定义显示名 / NBT，如 "Iron"），只改数量——转移"原模原样"，
             // 不给胜者重建裸物品（否则丢标签显示成"铁锭"等默认名）。
             ItemStack give = item.clone();
@@ -390,6 +406,29 @@ public final class SettlementManager {
             }
             to.getInventory().addItem(give); // 装不下的溢出随掉落列表一并清除
         }
+        return got;
+    }
+
+    // ---- 公共 API 事件发射（决斗死亡 + 结算） ----
+
+    /** 决斗内死亡：{@code DuelDeathEvent} + {@code DuelSettlementEvent(TRANSFER)}。 */
+    private void emitDeathAndSettlement(Duel duel, Player winner, Player loser, double ratio,
+                                        Map<Material, Integer> received, boolean voidDeath) {
+        org.alpha.sekiroBedwar.api.internal.SekiroApiImpl.duelDeath(duel,
+                winner.getUniqueId(), loser.getUniqueId(), ratio, voidDeath);
+        emitSettlement(duel, winner, loser, ratio, received);
+    }
+
+    /** {@code DuelSettlementEvent(TRANSFER)}：received 以胜者 uuid 归组。 */
+    private void emitSettlement(Duel duel, Player winner, Player loser, double ratio,
+                                Map<Material, Integer> received) {
+        Map<java.util.UUID, Map<Material, Integer>> by = new HashMap<>();
+        if (!received.isEmpty()) {
+            by.put(winner.getUniqueId(), Map.copyOf(received));
+        }
+        org.alpha.sekiroBedwar.api.internal.SekiroApiImpl.duelSettlement(duel,
+                org.alpha.sekiroBedwar.api.events.DuelSettlementEvent.Outcome.TRANSFER,
+                winner.getUniqueId(), loser.getUniqueId(), ratio, by);
     }
 
     /** 写操作必须位于 Bukkit 主线程（快速失败，防止异步线程篡改状态）。 */

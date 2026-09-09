@@ -97,9 +97,13 @@ public final class StanceBreakManager {
             if (victim.isBlocking() && config.breakOnBlockedHit()) {
                 breakStance(victim);
                 notifyBreak(attacker, victim);
+                org.alpha.sekiroBedwar.api.internal.SekiroApiImpl.stanceBreak(
+                        victim.getUniqueId(), attacker == null ? null : attacker.getUniqueId());
             } else if (!victim.isBlocking() && config.breakOnUnblockedHit()) {
                 breakStance(victim);
                 notifyBreak(attacker, victim);
+                org.alpha.sekiroBedwar.api.internal.SekiroApiImpl.stanceBreak(
+                        victim.getUniqueId(), attacker == null ? null : attacker.getUniqueId());
             }
         }
         double postHit = victim.getHealth() - event.getFinalDamage();
@@ -111,10 +115,13 @@ public final class StanceBreakManager {
     /**
      * 处理一次完美弹反成功（由 {@link org.alpha.sekiroBedwar.parry.ParryManager} 调用）：
      * 被弹反方（攻击者）若处于临界 → 崩条（弹反仅限近战，天然满足“近战才会崩”）。
+     * {@code parryer} 为弹反成功方（仅用于公共事件对手信息，可空）。
      */
-    public void onAttackParried(Player attacker) {
+    public void onAttackParried(Player attacker, Player parryer) {
         if (config.breakOnParriedAttack() && stanceManager.isCritical(attacker.getUniqueId())) {
             breakStance(attacker);
+            org.alpha.sekiroBedwar.api.internal.SekiroApiImpl.stanceBreak(
+                    attacker.getUniqueId(), parryer == null ? null : parryer.getUniqueId());
             if (attacker != null && attacker.isOnline()) {
                 attacker.spigot().sendMessage(ChatMessageType.ACTION_BAR,
                         new TextComponent("§c§l你的架势被完美弹反崩了！"));

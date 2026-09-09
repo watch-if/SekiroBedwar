@@ -129,6 +129,9 @@ public final class TerrorManager {
             return;
         }
         if (!paperDollManager.consumePaperDolls(player, config.paperDollCost())) {
+            org.alpha.sekiroBedwar.api.internal.SekiroApiImpl.toolUse(player.getUniqueId(),
+                    org.alpha.sekiroBedwar.api.ToolId.TERROR_HEAD, null,
+                    org.alpha.sekiroBedwar.api.ToolUseResult.INSUFFICIENT_RESOURCE);
             return;
         }
         if (!consumeZombieHead(player, 1)) {
@@ -136,6 +139,9 @@ public final class TerrorManager {
         }
         zones.add(new TerrorZone(player.getUniqueId(), player.getLocation().clone(),
                 System.currentTimeMillis() + config.durationMs()));
+        org.alpha.sekiroBedwar.api.internal.SekiroApiImpl.toolUse(player.getUniqueId(),
+                org.alpha.sekiroBedwar.api.ToolId.TERROR_HEAD, null,
+                org.alpha.sekiroBedwar.api.ToolUseResult.SUCCESS);
     }
 
     // ============ 死亡 ============

@@ -1,6 +1,7 @@
 package org.alpha.sekiroBedwar.mystery;
 
 import org.alpha.sekiroBedwar.SekiroBedwar;
+import org.alpha.sekiroBedwar.api.TechniqueCancelReason;
 import org.alpha.sekiroBedwar.event.DuelEndedEvent;
 import org.alpha.sekiroBedwar.paperdoll.PaperDollManager;
 import org.alpha.sekiroBedwar.stance.StanceManager;
@@ -10,6 +11,7 @@ import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.entity.PlayerDeathEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
+import org.bukkit.inventory.ItemStack;
 import org.screamingsandals.bedwars.api.events.PlayerLeaveEvent;
 
 import java.util.ArrayList;
@@ -31,14 +33,22 @@ public final class MysteryManager implements Listener {
     private final List<Mystery> arts = new ArrayList<>();
 
     public MysteryManager(SekiroBedwar plugin, MysteryConfig config,
-                          StanceManager stanceManager, PaperDollManager paperDollManager) {
+                          StanceManager stanceManager, PaperDollManager paperDollManager,
+                          org.alpha.sekiroBedwar.duel.DuelManager duelManager,
+                          org.alpha.sekiroBedwar.duel.DuelConfig duelConfig) {
         this.plugin = plugin;
         // 已实现的秘传（新增秘传：构造 + 在此 add 一行）
         if (config.fdfzEnabled()) {
             arts.add(new FeiduFuzhou(config, stanceManager, paperDollManager));
         }
         if (config.yameEnabled()) {
-            arts.add(new YamedoCrossSlash(plugin, config, stanceManager));
+            arts.add(new YamedoCrossSlash(config, stanceManager));
+        }
+        if (config.lsEnabled()) {
+            arts.add(new LongShan(plugin, config, stanceManager, paperDollManager, duelManager, duelConfig));
+        }
+        if (config.isshinEnabled()) {
+            arts.add(new IsshinSevenStrike(config, stanceManager, paperDollManager));
         }
     }
 
@@ -48,7 +58,7 @@ public final class MysteryManager implements Listener {
             return;
         }
         plugin.getServer().getPluginManager().registerEvents(this, plugin);
-        PlayerLeaveEvent.handle(plugin, ev -> clearPlayer(ev.getPlayer().getUuid()));
+        PlayerLeaveEvent.handle(plugin, ev -> clearPlayer(ev.getPlayer().getUuid(), TechniqueCancelReason.LEFT));
         for (Mystery art : arts) {
             plugin.getLogger().info("秘传已启用：" + art.id());
         }
@@ -68,26 +78,45 @@ public final class MysteryManager implements Listener {
         }
     }
 
-    private void clearPlayer(UUID uuid) {
+    /** 左键挥臂转发（龙闪释放；不取消原版攻击动作）。 */
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onLeftClick(org.bukkit.event.player.PlayerAnimationEvent event) {
         for (Mystery art : arts) {
-            art.clear(uuid);
+            art.onLeftClick(event.getPlayer());
+        }
+    }
+
+    /** 快捷栏切换转发（空手换刀起手的武技即时武装；取消的切换不转发）。 */
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onSlotSwitch(org.bukkit.event.player.PlayerItemHeldEvent event) {
+        Player player = event.getPlayer();
+        ItemStack previous = player.getInventory().getItem(event.getPreviousSlot());
+        ItemStack current = player.getInventory().getItem(event.getNewSlot());
+        for (Mystery art : arts) {
+            art.onSlotSwitch(player, previous, current);
+        }
+    }
+
+    private void clearPlayer(UUID uuid, TechniqueCancelReason reason) {
+        for (Mystery art : arts) {
+            art.clear(uuid, reason);
         }
     }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onDeath(PlayerDeathEvent event) {
-        clearPlayer(event.getEntity().getUniqueId());
+        clearPlayer(event.getEntity().getUniqueId(), TechniqueCancelReason.DEATH);
     }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onQuit(PlayerQuitEvent event) {
-        clearPlayer(event.getPlayer().getUniqueId());
+        clearPlayer(event.getPlayer().getUniqueId(), TechniqueCancelReason.LEFT);
     }
 
     /** 决斗结束：双方连击状态清零（跨场不残留；下一场从第一式重新起连）。 */
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onDuelEnded(DuelEndedEvent event) {
-        clearPlayer(event.getDuel().getPlayerAUuid());
-        clearPlayer(event.getDuel().getPlayerBUuid());
+        clearPlayer(event.getDuel().getPlayerAUuid(), TechniqueCancelReason.DUEL_ENDED);
+        clearPlayer(event.getDuel().getPlayerBUuid(), TechniqueCancelReason.DUEL_ENDED);
     }
 }

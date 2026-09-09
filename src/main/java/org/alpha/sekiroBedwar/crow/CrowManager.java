@@ -271,6 +271,9 @@ public final class CrowManager {
         }
         if (paperDollManager.countPaperDolls(player) < config.paperDollCost()) {
             player.playSound(player.getLocation(), Sound.ENTITY_VILLAGER_NO, 0.8f, 1.4f);
+            org.alpha.sekiroBedwar.api.internal.SekiroApiImpl.toolUse(player.getUniqueId(),
+                    org.alpha.sekiroBedwar.api.ToolId.CROW, null,
+                    org.alpha.sekiroBedwar.api.ToolUseResult.INSUFFICIENT_RESOURCE);
             return; // 纸人不足：不扣鸦
         }
         paperDollManager.consumePaperDolls(player, config.paperDollCost());
@@ -278,6 +281,9 @@ public final class CrowManager {
         startHover(player);
         scheduleRefill(player.getUniqueId()); // 消耗后进入补给 CD（默认 10s 补一只）
         player.playSound(player.getLocation(), Sound.ITEM_SHIELD_BLOCK, 0.9f, 1.3f);
+        org.alpha.sekiroBedwar.api.internal.SekiroApiImpl.toolUse(player.getUniqueId(),
+                org.alpha.sekiroBedwar.api.ToolId.CROW, null,
+                org.alpha.sekiroBedwar.api.ToolUseResult.SUCCESS);
     }
 
     /** 兜底：若取消交互后仍有投掷物生成（版本差异），悬停中玩家掷出的眼一律拦截。 */

@@ -319,6 +319,27 @@ freeze:
   block-place:
     enabled: true
 
+# ---------- 红圈生物禁令（MobBanManager，独立模块） ----------
+# 决斗红圈 = 与第三方玩家排除判定同半径（岛屿半径 + visuals.outer-radius，圆心触发时锁定）
+# 的圆形领域，两条规则：
+#   1. blocked-spawns 列出的生物（默认铁傀儡 + 羊/TNT羊）禁止在圈内以任何途径生成
+#      （玩家搭建 / 刷怪蛋 / 自然刷怪 / 繁殖一律取消，CreatureSpawnEvent 统一入口）；
+#   2. kill-stray-mobs=true 时，周期巡检圈内一切【非玩家生物】（Creature：怪物/动物/傀儡；
+#      玩家与投射物不受影响），从圈外走进来的直接移除（无掉落、无死亡消息）。
+# 垂直按 vertical-range 容差（防上下绕过）；多场决斗重叠时任一圈覆盖即生效；
+# ENDING（收尾）中的决斗不再扩张禁令。
+mob-ban:
+  # 总开关（false = 两条规则全关）
+  enabled: true
+  # 禁止在红圈生成的生物类型（EntityType 枚举名；羊覆盖「TNT羊」载体）
+  blocked-spawns: [IRON_GOLEM, SHEEP]
+  # 圈内一切非玩家生物进圈即移除
+  kill-stray-mobs: true
+  # 进圈判定的垂直容差（格，圆心 Y ± 该值）
+  vertical-range: 10.0
+  # 巡检间隔（tick；5 = 0.25 秒）
+  scan-ticks: 5
+
 # ---------- 剑攻速强化（SpeedManager，独立模块） ----------
 # 忍具商店 GUI 单按钮逐级购买（按钮显示下一级，买后自动更新；Lv.1→Lv.2→Lv.3 不可跳级）：
 # 购买后给玩家实体加 ATTACK_SPEED 修正（ADD_NUMBER），降低本人所有近战武器（剑/斧）的攻击冷却。
@@ -597,6 +618,9 @@ iframe:
 #   七击全部达标：攻击方得奖励（纸人可超持有上限）+ 架势恢复 + 生命恢复 + 完成音效。
 # intervals-ticks 缺失 / 为空时代码内置默认序列兜底（改动需重启生效）。
 mystery:
+  # 换刀 → 起手动作（苇名第一击 / 龙闪左键）的衔接窗口（tick）：超出即算脱拍
+  # （铁砧打磨音、武装作废；实现另含 10ms 主线程处理抖动余量，默认 1 tick → 60ms）
+  arm-connect-ticks: 1.0
   fei-du-fu-zhou:
     # 是否启用（全局武技，无需购买）
     enabled: true
@@ -624,6 +648,8 @@ mystery:
     name: "苇名十字斩"
     # 起手要求的空手最短持续时间（秒）：主手连续空置达该时长后换持近战武器才武装
     min-empty-hand-seconds: 0.5
+    # 起手允许的空手最长持续时间（秒，开区间）：≥该值属龙闪窗口，防两式判定重叠
+    max-empty-hand-seconds: 1.0
     # 第一击 → 第二击的目标间隔（tick）
     interval-ticks: 4.0
     # 间隔允许的上下浮动（tick）
@@ -633,6 +659,56 @@ mystery:
     # 有效第二段：受击方额外架势扣减 / 自身架势恢复
     victim-stance-penalty: 7.0
     self-stance-recovery: 3.0
+
+  # 秘传第三式·龙闪：空手蓄力的双手音波斩（全局启用，无需购买）。
+  # 起手：主手持续空手 ≥ min-empty-hand-seconds（1s，与苇名 0.5~1s 窗口互斥）后
+  # 换持近战武器 → 武装；左键挥臂释放（不取消普通攻击）：消耗 paper-doll-cost 纸人
+  # + 铁砧落地音，朝面朝方向（水平）发射监守者音波式飞行波柱——每 tick 前进
+  # wave-speed 格、判定路径自脚位向上 height-up 格（hit-radius 水平判定），飞出决斗
+  # 白圈（visuals.inner-radius）即消散（非决斗按 fallback-range-blocks 终止）；
+  # 命中玩家（释放者除外，每波每人一次）受 damage-hp 泛型直伤 + damage-stance 架势伤害。
+  # 第一波放出后隔 second-wave-delay-seconds，在同一触发位置同一方向自动补射第二波
+  # （伤害相同、不二次扣纸人）。纸人不足：低音提示、解除武装（须重新空手换刀）。
+  long-shan:
+    enabled: true
+    name: "龙闪"
+    min-empty-hand-seconds: 1.0
+    paper-doll-cost: 2
+    second-wave-delay-seconds: 1.0
+    # 波每 tick 前进距离（格）
+    wave-speed-blocks-per-tick: 1.5
+    # 波柱粒子（org.bukkit.Particle 枚举名；非法回退 ELECTRIC_SPARK）
+    particle: ELECTRIC_SPARK
+    # 命中判定水平半径（格）
+    hit-radius: 1.5
+    # 波柱向上覆盖高度（格）
+    height-up: 4.0
+    # 命中伤害：生命（泛型直伤）/ 架势
+    damage-hp: 2.0
+    damage-stance: 10.0
+    # 非决斗场景的波终止距离（格）
+    fallback-range-blocks: 10.0
+
+  # 秘传第四式·一心七连：七段近战连击 + 危终结（全局启用，无需购买；毫秒口径同飞渡浮舟）。
+  # 七击六间隔（第 7 击为第 6 段接上的那一击）；自第 3 段（第 4 击）起每段成功播铁砧落地音、
+  # 脱拍播打磨音（连续脱拍链只播一次）；第 3 段起每段成功且为有效攻击（未被完美弹反）→
+  # 受击方额外扣 bonus-per-stage-stance × 已叠有效段数（第 3 段 −3、第 4 段有效 −6、
+  # 第 5 段 −9、第 6 段 −12，逐段叠加）。
+  # 第 7 击必须是危攻击（矛+突进 LUNGE+疾跑，同 danger 模块口径），否则不算完成全段
+  # （打磨音、本击作为新一式重连）。6→7 长窗口允许右键格挡 / 投掷投掷物（不进不断序列）。
+  # 完成全段：奖励纸人（可超上限）+ 恢复自身架势 + 完成落地音。
+  isshin-seven-strike:
+    enabled: true
+    name: "一心七连"
+    # 第 1→2 至 6→7 击的目标间隔（tick；长度 +1 = 总击数）
+    intervals-ticks: [7.0, 5.0, 5.0, 6.0, 8.0, 10.0]
+    # 每段间隔允许的上下浮动（tick）
+    tolerance-ticks: 0.2
+    # 第 3 段起每段有效命中的单段架势增伤基数（实际 = 基数 × 已叠有效段数）
+    bonus-per-stage-stance: 3.0
+    # 完成全段奖励：纸人数量 / 恢复架势（0 = 该项不发）
+    reward-paper-dolls: 2
+    reward-stance: 4.0
 
 # ---------- 佛珠（BeadManager，忍具商店消耗品） ----------
 # 单局购买上限 4 次，每次 +5 最大血量（全局增益，死后重生恢复）；价格 4→6→8→10 钻递增

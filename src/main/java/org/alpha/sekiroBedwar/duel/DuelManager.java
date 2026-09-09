@@ -108,6 +108,7 @@ public final class DuelManager {
             return false;
         }
         duels.add(duel);
+        org.alpha.sekiroBedwar.api.internal.SekiroApiImpl.duelStart(duel);
         return true;
     }
 
@@ -277,6 +278,7 @@ public final class DuelManager {
             return;
         }
         Bukkit.getPluginManager().callEvent(new DuelEndedEvent(duel));
+        org.alpha.sekiroBedwar.api.internal.SekiroApiImpl.duelEnd(duel, reason);
         playerDuels.remove(duel.getPlayerAUuid());
         playerDuels.remove(duel.getPlayerBUuid());
         duels.remove(duel);
