@@ -90,6 +90,9 @@ public final class LongShan implements Mystery {
      */
     @Override
     public void onSlotSwitch(Player player, ItemStack previous, ItemStack current) {
+        if (!org.alpha.sekiroBedwar.combat.BwScope.inGame(player.getUniqueId())) {
+            return; // 玩法只在 BedWars 对局内触发：对局外不簿记、不武装
+        }
         boolean prevEmpty = previous == null || previous.getType().isAir();
         boolean curEmpty = current == null || current.getType().isAir();
         UUID uuid = player.getUniqueId();

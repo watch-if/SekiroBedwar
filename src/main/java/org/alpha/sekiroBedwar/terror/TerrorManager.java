@@ -125,6 +125,9 @@ public final class TerrorManager {
         if (!config.enabled() || player == null || held == null) {
             return;
         }
+        if (!org.alpha.sekiroBedwar.combat.BwScope.inGame(player.getUniqueId())) {
+            return; // 玩法只在 BedWars 对局内触发
+        }
         if (!isOwnedZombieHead(held, player)) {
             return;
         }
@@ -151,8 +154,9 @@ public final class TerrorManager {
         Player victim = event.getEntity();
         event.getDrops().removeIf(this::isZombieHead);
         terror.remove(victim.getUniqueId());
-        if (!config.enabled()) {
-            return;
+        if (!config.enabled()
+                || !org.alpha.sekiroBedwar.combat.BwScope.inGame(victim.getUniqueId())) {
+            return; // 玩法只在 BedWars 对局内触发（对局外不产生头颅掉落）
         }
         Player killer = victim.getKiller();
         if (killer == null || killer.equals(victim)) {

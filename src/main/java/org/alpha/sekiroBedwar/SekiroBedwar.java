@@ -124,6 +124,7 @@ public final class SekiroBedwar extends JavaPlugin {
     private MysteryManager mysteryManager;
     private IFrameManager iFrameManager;
     private MobBanManager mobBanManager;
+    private org.alpha.sekiroBedwar.welcome.WelcomeManager welcomeManager;
     private AutoEquipManager autoEquipManager;
     private ArmorShopManager armorShopManager;
     private DurabilityGuardManager durabilityGuardManager;
@@ -293,6 +294,11 @@ public final class SekiroBedwar extends JavaPlugin {
         // 且一切非玩家生物进圈即移除（巡检，无掉落无死亡消息）
         this.mobBanManager = new MobBanManager(this, new MobBanConfig(this), duelConfig, this.duelManager);
         this.mobBanManager.enable();
+
+        // 玩法指南书：进服 / 回大厅发放成书（10 页），进入 BedWars 对局时收回
+        this.welcomeManager = new org.alpha.sekiroBedwar.welcome.WelcomeManager(this,
+                new org.alpha.sekiroBedwar.welcome.WelcomeConfig(this));
+        this.welcomeManager.enable();
 
         // 剑格挡（独立模块）：1.21.2+ 有 blocks_attacks 组件时给剑赋盾牌格挡能力（右键举盾、
         // 可被斧头破盾、右键禁用）；1.21.1 无该组件自动跳过。

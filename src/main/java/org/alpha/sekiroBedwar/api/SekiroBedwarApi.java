@@ -78,11 +78,41 @@ public final class SekiroBedwarApi {
         return SekiroApiImpl.stance(player);
     }
 
-    // ==================== 枚举注册表（供外部展示） ====================
+    // ==================== 注册表 / 外部秘传 ====================
 
-    /** 当前核心已实现的秘传 id 列表（新增秘传自动扩展，外部按值消费）。 */
-    public static TechniqueId[] techniques() {
+    /** 全部已注册秘传（核心四式 + 外部插件注册；快照列表）。 */
+    public static java.util.List<TechniqueId> techniques() {
         return TechniqueId.values();
+    }
+
+    /** 按键查秘传 id（含核心与外部注册；未注册返回 null）。 */
+    public static TechniqueId technique(String key) {
+        return TechniqueId.of(key);
+    }
+
+    /**
+     * 外部插件注册自己的秘传（在 onEnable 调用；插件禁用时 {@link #unregisterTechnique} 注销）。
+     *
+     * <p>注册后由<b>外部插件自行判定并发广播</b>同一组秘传事件
+     * （{@link org.alpha.sekiroBedwar.api.events.SecretTechniqueStartEvent} /
+     * {@code Hit} / {@code Complete} / {@code Fail} / {@code Cancel} / {@code Branch}），
+     * 统计 / 排位 / 录像插件即可零改动统一消费——新增秘传不要求修改 API 架构。
+     * 音效、战斗数值、架势 / 资源结算等仍归核心：外部秘传若要施加战斗效果，
+     * 通过公开只读查询 + 事件协作，<b>不得</b>直接改玩家状态。</p>
+     *
+     * @param owner 注册方插件实例
+     * @param key   稳定小写键（a-z0-9 与 - _，2-64 字符；核心键保留）
+     * @param displayName 显示名（统计 / 展示用）
+     * @throws IllegalArgumentException 键非法 / 与核心或其他插件冲突
+     */
+    public static TechniqueId registerTechnique(org.bukkit.plugin.Plugin owner,
+                                                String key, String displayName) {
+        return TechniqueId.registerExternal(owner, key, displayName);
+    }
+
+    /** 注销本插件注册的秘传（幂等；核心 id 不可注销）。 */
+    public static void unregisterTechnique(org.bukkit.plugin.Plugin owner, TechniqueId id) {
+        TechniqueId.unregisterExternal(owner, id);
     }
 
     /** 当前核心会广播使用事件的忍具 id 列表。 */

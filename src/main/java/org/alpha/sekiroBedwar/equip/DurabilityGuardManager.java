@@ -45,6 +45,9 @@ public final class DurabilityGuardManager implements Listener {
         if (item == null) {
             return;
         }
+        if (!org.alpha.sekiroBedwar.combat.BwScope.inGame(event.getPlayer().getUniqueId())) {
+            return; // 玩法只在 BedWars 对局内生效（对局外耐久按原版）
+        }
         if (isProtected(item.getType())) {
             event.setCancelled(true);
         }

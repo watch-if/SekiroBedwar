@@ -105,9 +105,12 @@ public final class SwordBlockingManager {
         }
     }
 
-    /** 扫描全部在线玩家，给剑补 blocks_attacks（幂等，标记存在即跳过）。 */
+    /** 扫描全部在线玩家，给剑补 blocks_attacks（幂等，标记存在即跳过；对局外不改动玩家物品）。 */
     private void scanAll() {
         for (Player player : Bukkit.getOnlinePlayers()) {
+            if (!org.alpha.sekiroBedwar.combat.BwScope.inGame(player.getUniqueId())) {
+                continue; // 玩法只在 BedWars 对局内生效
+            }
             scanPlayer(player);
         }
     }

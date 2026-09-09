@@ -62,9 +62,13 @@ public final class IFrameManager implements Listener {
      */
     private void scan() {
         for (Player player : Bukkit.getOnlinePlayers()) {
-            boolean desired = duelManager.isInDuel(player)
-                    ? config.iframeDuelEnabled()
-                    : config.iframeGlobalEnabled();
+            // 玩法只在 BedWars 对局内生效：对局外一律还原原版 20 tick；
+            // global-enabled 语义 = 对局内（决斗之外）是否有无敌帧
+            boolean inGame = org.alpha.sekiroBedwar.combat.BwScope.inGame(player.getUniqueId());
+            boolean desired = !inGame ? true
+                    : duelManager.isInDuel(player)
+                            ? config.iframeDuelEnabled()
+                            : config.iframeGlobalEnabled();
             apply(player, desired);
         }
     }

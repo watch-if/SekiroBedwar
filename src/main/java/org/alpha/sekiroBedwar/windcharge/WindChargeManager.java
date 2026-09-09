@@ -118,6 +118,9 @@ public final class WindChargeManager {
      * 本触发在其后的高优先级）：以释放者脚位为圆心、面朝方向为短轴，锁定生成一面半椭圆爆风墙。
      */
     public void handleLaunch(Player caster) {
+        if (!org.alpha.sekiroBedwar.combat.BwScope.inGame(caster.getUniqueId())) {
+            return; // 玩法只在 BedWars 对局内触发（对局外风弹按原版）
+        }
         Location base = caster.getLocation();
         Vector dir = base.getDirection().setY(0.0);
         if (dir.lengthSquared() < 1.0e-4) {
@@ -210,8 +213,11 @@ public final class WindChargeManager {
         }
     }
 
-    /** 施加「不能防御与攻击」：不可叠加窗口（默认 6s）内再次触碰直接忽略。 */
+    /** 施加「不能防御与攻击」：不可叠加窗口（默认 6s）内再次触碰直接忽略；对局外玩家不受封。 */
     private void applyTouch(Player player, long now) {
+        if (!org.alpha.sekiroBedwar.combat.BwScope.inGame(player.getUniqueId())) {
+            return; // 玩法只在 BedWars 对局内生效
+        }
         UUID uuid = player.getUniqueId();
         Long last = lastTouchedAt.get(uuid);
         if (last != null && now - last < config.noStackMs()) {
