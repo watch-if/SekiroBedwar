@@ -34,15 +34,17 @@ public final class FeiduFuzhou implements Mystery {
     private final MysteryConfig config;
     private final StanceManager stanceManager;
     private final PaperDollManager paperDollManager;
+    private final KnockbackGuard knockbackGuard;
 
     /** 玩家 → 连击进度。 */
     private final Map<UUID, ComboProgress> progress = new HashMap<>();
 
     public FeiduFuzhou(MysteryConfig config, StanceManager stanceManager,
-                       PaperDollManager paperDollManager) {
+                       PaperDollManager paperDollManager, KnockbackGuard knockbackGuard) {
         this.config = config;
         this.stanceManager = stanceManager;
         this.paperDollManager = paperDollManager;
+        this.knockbackGuard = knockbackGuard;
     }
 
     @Override
@@ -91,9 +93,10 @@ public final class FeiduFuzhou implements Mystery {
         }
         org.alpha.sekiroBedwar.api.internal.SekiroApiImpl.techHit(uuid,
                 org.alpha.sekiroBedwar.api.TechniqueId.FEIDU_FUZU, p.hits, parried, victim.getUniqueId());
-        // 第 3 段（第 4 击）起每段成功 = 铁砧落地音；第 7 击由完成奖励统一播（不叠加）
-        if (p.hits >= 4 && p.hits < totalHits) {
+        // 第 3 击起每段成功 = 铁砧落地音 + 刷新 1s 防击退；第 7 击由完成奖励统一播（不叠加）
+        if (p.hits >= 3 && p.hits < totalHits) {
             attacker.playSound(attacker.getLocation(), Sound.BLOCK_ANVIL_LAND, 1.0f, 1.0f);
+            knockbackGuard.refresh(uuid);
         }
 
         if (p.hits == totalHits - 1 && !parried) {
@@ -103,6 +106,7 @@ public final class FeiduFuzhou implements Mystery {
         if (p.hits == totalHits) {
             progress.remove(uuid);
             complete(attacker);
+            knockbackGuard.refresh(uuid); // 末段成功同样刷新防击退（完成音已在 complete 内播）
             org.alpha.sekiroBedwar.api.internal.SekiroApiImpl.techComplete(uuid,
                     org.alpha.sekiroBedwar.api.TechniqueId.FEIDU_FUZU, totalHits, p.validHits);
         }

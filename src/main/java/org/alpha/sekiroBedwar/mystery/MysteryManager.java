@@ -31,15 +31,18 @@ public final class MysteryManager implements Listener {
 
     private final SekiroBedwar plugin;
     private final List<Mystery> arts = new ArrayList<>();
+    /** 第三击起防击退护身（飞渡浮舟 / 一心七连共用）。 */
+    private final KnockbackGuard guard;
 
     public MysteryManager(SekiroBedwar plugin, MysteryConfig config,
                           StanceManager stanceManager, PaperDollManager paperDollManager,
                           org.alpha.sekiroBedwar.duel.DuelManager duelManager,
                           org.alpha.sekiroBedwar.duel.DuelConfig duelConfig) {
         this.plugin = plugin;
+        this.guard = new KnockbackGuard(config);
         // 已实现的秘传（新增秘传：构造 + 在此 add 一行）
         if (config.fdfzEnabled()) {
-            arts.add(new FeiduFuzhou(config, stanceManager, paperDollManager));
+            arts.add(new FeiduFuzhou(config, stanceManager, paperDollManager, guard));
         }
         if (config.yameEnabled()) {
             arts.add(new YamedoCrossSlash(config, stanceManager));
@@ -48,7 +51,7 @@ public final class MysteryManager implements Listener {
             arts.add(new LongShan(plugin, config, stanceManager, paperDollManager, duelManager, duelConfig));
         }
         if (config.isshinEnabled()) {
-            arts.add(new IsshinSevenStrike(config, stanceManager, paperDollManager));
+            arts.add(new IsshinSevenStrike(config, stanceManager, paperDollManager, guard));
         }
     }
 
@@ -58,6 +61,7 @@ public final class MysteryManager implements Listener {
             return;
         }
         plugin.getServer().getPluginManager().registerEvents(this, plugin);
+        plugin.getServer().getPluginManager().registerEvents(guard, plugin);
         PlayerLeaveEvent.handle(plugin, ev -> clearPlayer(ev.getPlayer().getUuid(), TechniqueCancelReason.LEFT));
         for (Mystery art : arts) {
             plugin.getLogger().info("秘传已启用：" + art.id());
@@ -69,6 +73,7 @@ public final class MysteryManager implements Listener {
             art.clearAll();
             art.shutdown();
         }
+        guard.clearAll();
     }
 
     /** BlockManager / ParryManager 的近战命中转发（parried = 该击被完美弹反）。 */
@@ -98,6 +103,7 @@ public final class MysteryManager implements Listener {
     }
 
     private void clearPlayer(UUID uuid, TechniqueCancelReason reason) {
+        guard.clear(uuid);
         for (Mystery art : arts) {
             art.clear(uuid, reason);
         }

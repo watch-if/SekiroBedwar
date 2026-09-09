@@ -44,15 +44,17 @@ public final class IsshinSevenStrike implements Mystery {
     private final MysteryConfig config;
     private final StanceManager stanceManager;
     private final PaperDollManager paperDollManager;
+    private final KnockbackGuard knockbackGuard;
 
     /** 玩家 → 连段进度。 */
     private final Map<UUID, Combo> combo = new HashMap<>();
 
     public IsshinSevenStrike(MysteryConfig config, StanceManager stanceManager,
-                             PaperDollManager paperDollManager) {
+                             PaperDollManager paperDollManager, KnockbackGuard knockbackGuard) {
         this.config = config;
         this.stanceManager = stanceManager;
         this.paperDollManager = paperDollManager;
+        this.knockbackGuard = knockbackGuard;
     }
 
     @Override
@@ -99,6 +101,7 @@ public final class IsshinSevenStrike implements Mystery {
                 org.alpha.sekiroBedwar.api.TechniqueId.ISSHIN_SEVEN_STRIKE, hits, parried, victim.getUniqueId());
 
         if (hits == totalHits) {
+            knockbackGuard.refresh(uuid); // 末段接上即刷新防击退（非危终结也保留此前段收益，仅不算完成）
             // 第 7 击：必须是危攻击（矛+LUNGE+疾跑），否则不算完成全段
             if (!isDangerStrike(attacker)) {
                 org.alpha.sekiroBedwar.api.internal.SekiroApiImpl.techFail(uuid,
@@ -125,11 +128,14 @@ public final class IsshinSevenStrike implements Mystery {
                     org.alpha.sekiroBedwar.api.TechniqueId.ISSHIN_SEVEN_STRIKE, totalHits, valid);
             return;
         }
-        if (hits >= 4) { // 第 3~5 段（第 4/5/6 击）：成功播落地音 + 有效击叠加架势增伤
+        if (hits >= 3) { // 第 3 击起每段成功：铁砧落地音 + 刷新 1s 防击退（刷新不叠加）
             attacker.playSound(attacker.getLocation(), Sound.BLOCK_ANVIL_LAND, 1.0f, 1.0f);
+            knockbackGuard.refresh(uuid);
+        }
+        if (hits >= 4) { // 第 3~5 段（第 4/5/6 击）：有效击逐段叠加架势增伤
             applyStageBonus(attacker, victim, parried);
         }
-        // 第 1、2 段（第 2/3 击）接上：静默、无增伤
+        // 第 2 击接上：静默、无增伤
     }
 
     /** 段成功且该击有效（未被完美弹反）→ 有效段数 +1，受击方额外扣 3×段数 架势（叠加）。 */

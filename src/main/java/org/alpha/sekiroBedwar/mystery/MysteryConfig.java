@@ -81,6 +81,9 @@ public final class MysteryConfig {
     // ---- 两式共用：换刀 → 起手动作衔接窗 ----
     private long armConnectMs;
 
+    // ---- 第三击起的防击退护身（飞渡浮舟 / 一心七连） ----
+    private double knockbackGuardSeconds;
+
     public MysteryConfig(SekiroBedwar plugin) {
         this.plugin = plugin;
         reload();
@@ -146,6 +149,7 @@ public final class MysteryConfig {
 
         this.armConnectMs = Math.max(0L,
                 Math.round(Math.max(0.0, yaml.getDouble("mystery.arm-connect-ticks", 1.0)) * 50.0)) + 10L;
+        this.knockbackGuardSeconds = Math.max(0.0, yaml.getDouble("mystery.knockback-guard-seconds", 1.0));
     }
 
     private org.bukkit.Particle parseParticle(String name) {
@@ -342,6 +346,11 @@ public final class MysteryConfig {
      */
     public long armConnectMs() {
         return armConnectMs;
+    }
+
+    /** 第三击起每次成功命中刷新的防击退时长（秒；0 = 关闭）。 */
+    public double knockbackGuardSeconds() {
+        return knockbackGuardSeconds;
     }
 
     // ---- 一心七连 ----
