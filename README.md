@@ -318,6 +318,9 @@ SekiroBedwar 是**战斗规则核心**：它只产生稳定的战斗事件与只
 | `stanceOf(Player / UUID)` | 架势只读快照（当前 / 最大 / 阶段 / 禁格挡），无写入口 |
 | `techniques()` / `technique(key)` | 全部秘传 id（核心四式 + 外部注册）；按键查询 |
 | `registerTechnique(owner, key, name)` / `unregisterTechnique(...)` | 外部插件注册 / 注销自己的秘传 |
+| `tickClock()` | 核心 tick 时基：外部秘传节奏判定直接数拍（与 TPS 波动无关，免自建计数器） |
+| `setComboProgress(id, player, hits)` / `topProgressFor(id, player)` | 外部秘传上报连段进度 / 查询其他式的领先进度（槽位随完成 / 失败 / 取消自动回收） |
+| `playTechniqueCue(id, player, TechniqueCue)` | 统一发声：SUCCESS = 铁砧落地 / FAIL = 铁砧打磨，核心按**领先者发声**规则决定是否出声 |
 | `tools()` | 忍具 id 列表 |
 
 ### 事件（`api.events`，主线程广播）
@@ -343,12 +346,29 @@ public final class SekiroMysteryExtra extends JavaPlugin {
         myArt = SekiroBedwarApi.registerTechnique(this, "kagerou-shin", "阳炎身");
     }
 
-    // 你的触发判定（监听 Bukkit 事件、自行计时）……关键节点广播统一秘传事件：
-    private void onStarted(Player p) {
-        Bukkit.getPluginManager().callEvent(new SecretTechniqueStartEvent(
-                p.getUniqueId(), myArt, SekiroBedwarApi.duelOf(p).map(DuelInfo::id).orElse(null)));
+    int comboHits = 0;
+    private int lastHitTick = -99;
+
+    // 节奏判定直接用核心 tick 时基数拍，发声走统一 cue——与核心四式共享
+    // 「领先者发声」视野（并行多式混音问题自动消解）：
+    private void onMyStageHit(Player p, int targetBeats, int toleranceBeats) {
+        int now = SekiroBedwarApi.tickClock();
+        if (Math.abs((now - lastHitTick) - targetBeats) <= toleranceBeats) {
+            lastHitTick = now;
+            comboHits++;
+            SekiroBedwarApi.setComboProgress(myArt, p.getUniqueId(), comboHits);
+            SekiroBedwarApi.playTechniqueCue(myArt, p, TechniqueCue.SUCCESS);
+            Bukkit.getPluginManager().callEvent(new SecretTechniqueHitEvent(
+                    p.getUniqueId(), myArt,
+                    SekiroBedwarApi.duelOf(p).map(DuelInfo::id).orElse(null),
+                    comboHits, false, p.getUniqueId()));
+        } else {
+            comboHits = 0;
+            lastHitTick = now; // 本击作为新一式第一击
+            SekiroBedwarApi.playTechniqueCue(myArt, p, TechniqueCue.FAIL); // FAIL 自动回收进度槽
+        }
     }
-    // 段成功 / 完成 / 失败同理：SecretTechniqueHitEvent / CompleteEvent / FailEvent
+    // 启动 / 完成 / 失败同样广播 SecretTechniqueStartEvent / CompleteEvent / FailEvent
 
     @Override
     public void onDisable() {
@@ -357,7 +377,7 @@ public final class SekiroMysteryExtra extends JavaPlugin {
 }
 ```
 
-外部秘传**只发事件、不改玩家状态**（架势 / 资源等数值只能经核心规则变化）。
+外部秘传**只发事件与 cue、不改玩家状态**（架势 / 资源等数值只能经核心规则变化）；节奏请走 `tickClock()` 数拍、发声请走 `playTechniqueCue`——不要自 playSound，这样服务器秘传的音效语言（落地 = 成功、打磨 = 脱拍、领先者出声）对全体秘传一致。
 
 ### 示例二：连段成功率统计插件
 

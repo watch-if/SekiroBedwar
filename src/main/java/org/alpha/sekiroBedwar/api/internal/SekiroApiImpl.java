@@ -60,6 +60,8 @@ public final class SekiroApiImpl {
     private final SekiroBedwar plugin;
     private final DuelManager duelManager;
     private final StanceManager stanceManager;
+    /** 秘传运行时宿主（tick 时基 / 外部进度槽 / cue 发声），装配后期注入。 */
+    private static org.alpha.sekiroBedwar.mystery.MysteryManager mysteryRuntime;
 
     private SekiroApiImpl(SekiroBedwar plugin, DuelManager duelManager, StanceManager stanceManager) {
         this.plugin = plugin;
@@ -72,8 +74,42 @@ public final class SekiroApiImpl {
         instance = new SekiroApiImpl(plugin, duelManager, stanceManager);
     }
 
+    /** 注入秘传运行时宿主（MysteryManager 创建后调用）。 */
+    public static void attachMystery(org.alpha.sekiroBedwar.mystery.MysteryManager runtime) {
+        mysteryRuntime = runtime;
+    }
+
     public static void uninstall() {
         instance = null;
+        mysteryRuntime = null;
+    }
+
+    // ---- 秘传运行时委托（门面 SekiroBedwarApi 的运行时方法走这里；未注入时安全默认值） ----
+
+    public static int tickClock() {
+        org.alpha.sekiroBedwar.mystery.MysteryManager m = mysteryRuntime;
+        return m == null ? -1 : m.tick();
+    }
+
+    public static void setComboProgress(org.alpha.sekiroBedwar.api.TechniqueId id, UUID player, int hits) {
+        org.alpha.sekiroBedwar.mystery.MysteryManager m = mysteryRuntime;
+        if (m != null) {
+            m.setExternalProgress(id, player, hits);
+        }
+    }
+
+    public static int topProgressFor(org.alpha.sekiroBedwar.api.TechniqueId id, UUID player) {
+        org.alpha.sekiroBedwar.mystery.MysteryManager m = mysteryRuntime;
+        return m == null ? 0 : m.rivalProgress(id, player);
+    }
+
+    public static void techniqueCue(org.alpha.sekiroBedwar.api.TechniqueId id,
+                                    org.bukkit.entity.Player player,
+                                    org.alpha.sekiroBedwar.api.TechniqueCue cue) {
+        org.alpha.sekiroBedwar.mystery.MysteryManager m = mysteryRuntime;
+        if (m != null) {
+            m.playCue(id, player, cue);
+        }
     }
 
     public static SekiroApiImpl get() {

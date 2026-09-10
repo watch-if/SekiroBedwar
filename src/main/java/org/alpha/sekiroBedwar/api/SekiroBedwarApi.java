@@ -2,6 +2,7 @@ package org.alpha.sekiroBedwar.api;
 
 import org.alpha.sekiroBedwar.api.internal.SekiroApiImpl;
 import org.bukkit.entity.Player;
+import org.bukkit.plugin.Plugin;
 
 import java.util.List;
 import java.util.Optional;
@@ -118,5 +119,46 @@ public final class SekiroBedwarApi {
     /** 当前核心会广播使用事件的忍具 id 列表。 */
     public static ToolId[] tools() {
         return ToolId.values();
+    }
+
+    // ==================== 秘传运行时（供外部秘传共享核心基础设施） ====================
+
+    /**
+     * 核心 tick 时基（1 tick 自增一次）。外部秘传的节奏判定应以此数拍
+     * （{@code |Δtick − 目标拍| ≤ 容差拍}），与 TPS 波动无关，且免自建计数器。
+     * 核心未就绪时返回 -1。
+     */
+    public static int tickClock() {
+        return SekiroApiImpl.tickClock();
+    }
+
+    /**
+     * 外部秘传上报当前连段进度（每次段成功后调用；0 = 清槽）。
+     * 进度参与「领先者发声」判定；核心式进度由核心自持、不可外部写入。
+     * 槽位随该式的 Complete / Fail / Cancel 事件或 FAIL cue 自动回收。
+     *
+     * @throws IllegalArgumentException id 为核心内置武技
+     */
+    public static void setComboProgress(TechniqueId id, java.util.UUID player, int hits) {
+        if (id != null && id.core()) {
+            throw new IllegalArgumentException("核心武技进度由核心维护，不可外部写入: " + id.configKey());
+        }
+        SekiroApiImpl.setComboProgress(id, player, hits);
+    }
+
+    /** 除 {@code id} 外所有秘传（核心四式 + 其他外部式）在该玩家身上的最高连段进度。 */
+    public static int topProgressFor(TechniqueId id, java.util.UUID player) {
+        return SekiroApiImpl.topProgressFor(id, player);
+    }
+
+    /**
+     * 统一发声 cue：SUCCESS = 铁砧落地声、FAIL = 铁砧打磨声，由核心按「领先者发声」
+     * 规则决定是否出声（同一玩家并行多式时只有进度领先者出声）。
+     * 用法：段成功后先 {@link #setComboProgress} 更新进度，再 cue(SUCCESS)；
+     * 脱拍 / 失败时 cue(FAIL)（自动回收该式进度槽）。
+     * 外部式不要自行 playSound 节奏音——保持服务器秘传音效语言一致。
+     */
+    public static void playTechniqueCue(TechniqueId id, org.bukkit.entity.Player player, TechniqueCue cue) {
+        SekiroApiImpl.techniqueCue(id, player, cue);
     }
 }

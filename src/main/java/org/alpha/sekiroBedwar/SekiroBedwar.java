@@ -256,6 +256,8 @@ public final class SekiroBedwar extends JavaPlugin {
         this.mysteryManager = new MysteryManager(this, mysteryConfig, stanceManager, this.paperDollManager,
                 this.duelManager, duelConfig);
         this.mysteryManager.enable();
+        // 秘传运行时（tick 时基 / 外部进度槽 / cue 发声）接入公共 API 门面
+        org.alpha.sekiroBedwar.api.internal.SekiroApiImpl.attachMystery(this.mysteryManager);
         this.iFrameManager = new IFrameManager(this, mysteryConfig, this.duelManager);
         this.iFrameManager.enable();
 
