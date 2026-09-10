@@ -28,8 +28,7 @@ public interface Mystery {
     /**
      * 快捷栏切换钩子（宿主监听 {@code PlayerItemHeldEvent} 统一转发，切换已实际发生）：
      * {@code previous} / {@code current} = 切换前 / 后主手物品（可空）。
-     * 需要「空手换刀」起手的武技在此即时武装（记武装时刻，起手动作须在 1 tick 内衔接），
-     * 默认不关心。
+     * 需要「空手换刀」起手的武技在此即时武装（起手动作须在衔接窗内衔接），默认不关心。
      */
     default void onSlotSwitch(Player player, ItemStack previous, ItemStack current) {
     }
@@ -50,6 +49,15 @@ public interface Mystery {
 
     /** 宿主禁用时全量清理状态。 */
     default void clearAll() {
+    }
+
+    /**
+     * 当前连段进度（已完成击数；未处于连段 = 0）。用于「领先者发声」：同一玩家并行多式
+     * 时，只有进度领先者播段成功 / 脱拍音，落后的式静默重开——宏练一式时不混入别式
+     * 的脱拍音（完成音 / 释放音不受此限制）。
+     */
+    default int comboProgress(UUID player) {
+        return 0;
     }
 
     /** 宿主禁用时注销自建周期任务（无自建任务的武技不用覆写）。 */

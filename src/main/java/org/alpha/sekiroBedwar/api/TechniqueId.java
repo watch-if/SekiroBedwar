@@ -24,6 +24,10 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 public final class TechniqueId {
 
+    // 必须先于下方常量声明：静态字段按文本顺序初始化，registerCore 依赖 REGISTRY 已就绪。
+    /** key（小写-连字符）→ 注册实例（核心 + 外部，注册序保留）。 */
+    private static final Map<String, TechniqueId> REGISTRY = new ConcurrentHashMap<>();
+
     /** 第一式·飞渡浮舟：七击节奏连（间隔序列 ±容差），第 6 击有效命中额外架势伤。 */
     public static final TechniqueId FEIDU_FUZU =
             registerCore("fei-du-fu-zhou", "飞渡浮舟");
@@ -36,9 +40,6 @@ public final class TechniqueId {
     /** 第四式·一心七连：七段近战连击 + 危攻击终结，逐段叠加架势增伤。 */
     public static final TechniqueId ISSHIN_SEVEN_STRIKE =
             registerCore("isshin-seven-strike", "一心七连");
-
-    /** key（小写-连字符）→ 注册实例（核心 + 外部，注册序保留）。 */
-    private static final Map<String, TechniqueId> REGISTRY = new ConcurrentHashMap<>();
 
     private final String key;
     private final String displayName;

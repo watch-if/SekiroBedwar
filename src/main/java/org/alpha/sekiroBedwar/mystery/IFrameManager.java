@@ -16,9 +16,9 @@ import org.bukkit.scheduler.BukkitTask;
  * 清当前帧（受击立即能再受击，拼刀连击不再被保护帧吞伤害——与飞渡浮舟的
  * tick 级连击节奏配套）；开启 = 恢复原版 20 tick。</p>
  *
- * <p>实现为周期巡检（{@code iframe.scan-ticks}，默认 5 tick）+ 幂等应用
- * （状态未变不写）：进 / 出场、重生重建实体（帧参数回默认）等边界一个机制全覆盖，
- * 零事件时序依赖（忍具商店入口同款「巡检 + 幂等」教训）。插件禁用时全员恢复原版。</p>
+ * <p>实现为周期巡检（{@code iframe.scan-ticks}，默认 5 tick）逐人直接应用：
+ * 进出对局、重生重建实体（帧参数回默认）等边界一个机制全覆盖，无事件时序依赖；
+ * maximumNoDamageTicks 是内存字段，每轮写入无包副作用。插件禁用时全员恢复原版。</p>
  */
 public final class IFrameManager implements Listener {
 

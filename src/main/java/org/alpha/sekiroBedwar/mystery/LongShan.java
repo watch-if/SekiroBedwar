@@ -33,8 +33,8 @@ import java.util.UUID;
  * <p><b>起手</b>：主手<b>持续空手 ≥ {@code min-empty-hand-seconds}(1s)</b> 后快捷栏换持
  * 近战武器 → <b>即时武装</b>（{@code PlayerItemHeldEvent} 驱动，与苇名 0.5~1s 窗口互补，
  * 两式判定天然互斥不重叠）。武装后玩家<b>左键挥臂</b>即释放（不取消普通攻击），
- * 但释放动作必须在<b>换刀后 1 tick 内</b>完成（超时 = 脱拍：武装作废 + 铁砧打磨音，
- * 须重新空手换刀）。</p>
+ * 释放须在换刀后的衔接窗（{@code mystery.arm-connect-ticks}，默认 4 拍）内完成，
+ * 超时 = 脱拍（武装作废 + 打磨音提示），须重新空手换刀。</p>
  *
  * <p><b>释放</b>：消耗 {@code paper-doll-cost}(2) 纸人（不足则低音提示、不消耗武装）
  * + 铁砧落地音，朝释放者<b>面朝方向</b>（水平投影）发射一道监守者音波式飞行波柱——
@@ -57,8 +57,8 @@ public final class LongShan implements Mystery {
     private final DuelConfig duelConfig;
 
     private final BukkitTask waveTask;
-    /** 已武装玩家 → 武装时刻（左键释放须在其后 1 tick 内衔接）。 */
-    private final Map<UUID, Long> armedAt = new HashMap<>();
+    /** 已武装玩家 → 武装 tick 序号（左键释放须在其后衔接窗内，默认 1 tick）。 */
+    private final Map<UUID, Integer> armedTick = new HashMap<>();
     /** 玩家 → 本轮空手起始时刻（「持物→空」切换时写入；无记录 = 开局即空手）。 */
     private final Map<UUID, Long> emptySince = new HashMap<>();
     /** 释放中双波的公共统计：玩家 → 波命中数（第二波放完随 Complete 一起消费清除）。 */
@@ -66,14 +66,21 @@ public final class LongShan implements Mystery {
     /** 存活中的飞行波。 */
     private final List<Wave> waves = new ArrayList<>();
 
+    private final java.util.function.IntSupplier tick;
+    private final java.util.function.BiFunction<Mystery, UUID, Integer> rivalTop;
+
     public LongShan(SekiroBedwar plugin, MysteryConfig config, StanceManager stanceManager,
-                    PaperDollManager paperDollManager, DuelManager duelManager, DuelConfig duelConfig) {
+                    PaperDollManager paperDollManager, DuelManager duelManager, DuelConfig duelConfig,
+                    java.util.function.IntSupplier tick,
+                    java.util.function.BiFunction<Mystery, UUID, Integer> rivalTop) {
         this.plugin = plugin;
         this.config = config;
         this.stanceManager = stanceManager;
         this.paperDollManager = paperDollManager;
         this.duelManager = duelManager;
         this.duelConfig = duelConfig;
+        this.tick = tick;
+        this.rivalTop = rivalTop;
         this.waveTask = plugin.getServer().getScheduler().runTaskTimer(plugin, this::tickWaves, 1L, 1L);
     }
 
@@ -107,25 +114,27 @@ public final class LongShan implements Mystery {
         Long since = emptySince.remove(uuid);
         long heldEmptyMs = since == null ? Long.MAX_VALUE : now - since;
         if (heldEmptyMs >= config.lsMinEmptyMs()) {
-            armedAt.put(uuid, now); // 空手 ≥1s 后换刀：龙闪武装（左键须 1 tick 内衔接）
+            armedTick.put(uuid, tick.getAsInt()); // 空手 ≥1s 后换刀：武装（左键按拍衔接）
             org.alpha.sekiroBedwar.api.internal.SekiroApiImpl.techStart(uuid,
                     org.alpha.sekiroBedwar.api.TechniqueId.LONG_SHAN); // 公共 API：武装即启动
         }
     }
 
-    // ============ 左键释放（须在换刀后 1 tick 内衔接） ============
+    // ============ 左键释放（须在换刀后衔接窗内） ============
 
     /** 武装后左键挥臂 → 扣 2 纸人放第一波 + 1s 后同位置同方向补第二波。 */
     @Override
     public void onLeftClick(Player player) {
         final UUID caster = player.getUniqueId();
-        Long at = armedAt.remove(caster);
+        Integer at = armedTick.remove(caster);
         if (at == null) {
             return;
         }
-        if (System.nanoTime() / 1_000_000L - at > config.armConnectMs()) {
-            // 换刀后未在 1 tick 内释放：算脱拍（武装作废，须重新空手换刀）
-            player.playSound(player.getLocation(), Sound.BLOCK_ANVIL_USE, 1.0f, 1.0f);
+        if (tick.getAsInt() - at > (int) Math.ceil(config.armConnectTicks())) {
+            // 换刀后未在衔接窗内释放：算脱拍（武装作废，须重新空手换刀；领先者才播提示音）
+            if (rivalTop.apply(this, caster) <= 1) {
+                player.playSound(player.getLocation(), Sound.BLOCK_ANVIL_USE, 1.0f, 1.0f);
+            }
             org.alpha.sekiroBedwar.api.internal.SekiroApiImpl.techFail(caster,
                     org.alpha.sekiroBedwar.api.TechniqueId.LONG_SHAN,
                     org.alpha.sekiroBedwar.api.TechniqueFailReason.CONNECT_TIMEOUT, 0);
@@ -274,7 +283,7 @@ public final class LongShan implements Mystery {
     @Override
     public void clear(UUID player, org.alpha.sekiroBedwar.api.TechniqueCancelReason reason) {
         boolean inFlight = hitsByCaster.remove(player) != null;
-        if (armedAt.remove(player) != null || inFlight) {
+        if (armedTick.remove(player) != null || inFlight) {
             org.alpha.sekiroBedwar.api.internal.SekiroApiImpl.techCancel(player,
                     org.alpha.sekiroBedwar.api.TechniqueId.LONG_SHAN, reason, inFlight ? 1 : 0);
         }
@@ -283,8 +292,13 @@ public final class LongShan implements Mystery {
     }
 
     @Override
+    public int comboProgress(UUID player) {
+        return (armedTick.containsKey(player) || hitsByCaster.containsKey(player)) ? 1 : 0;
+    }
+
+    @Override
     public void clearAll() {
-        armedAt.clear();
+        armedTick.clear();
         emptySince.clear();
         hitsByCaster.clear();
         waves.clear();

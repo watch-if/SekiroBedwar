@@ -11,17 +11,20 @@ import org.bukkit.inventory.ItemStack;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
+import java.util.function.BiFunction;
+import java.util.function.IntSupplier;
 
 /**
  * 秘传第四式·一心七连（{@link Mystery} 实现）：伊势路的七段流刀连。
  *
- * <p><b>识别</b>（与飞渡浮舟同口径：近战命中钩子、毫秒 = tick×50 ± 容差×50、单调时钟、
- * 被完美弹反仍算打出的一击）：七击六间隔默认 <b>7 / 5 / 5 / 6 / 8 / 10 tick</b>
- * 各 ±{@code tolerance-ticks}(0.2)；任何一击脱拍 → 打磨音（一次连续脱拍链只播一次）+
- * 本击作为新的一式重连。第 6→7 段（10 tick）等长窗口允许右键格挡 / 投掷投掷物——
- * 这些动作不产生近战命中，不进序列也不打断。</p>
+ * <p><b>识别</b>（与飞渡浮舟同口径：近战命中钩子、<b>服务器 tick 计数差判定</b>
+ * {@code |Δtick − 目标拍| ≤ ceil(容差)}、被完美弹反仍算打出的一击）：七击六间隔默认
+ * <b>7 / 5 / 5 / 6 / 8 / 10 tick</b> 各 ±{@code tolerance-ticks}；任何一击脱拍 →
+ * 打磨音（一次连续脱拍链只播一次）+ 本击作为新的一式重连。第 6→7 段（10 tick）等长窗口
+ * 允许右键格挡 / 投掷投掷物——这些动作不产生近战命中，不进序列也不打断。</p>
  *
- * <p><b>音效</b>：自第 3 段（第 4 击）起每段成功播铁砧落地音；第 7 击完成音同为落地。</p>
+ * <p><b>音效</b>：自第 3 击起每段成功播铁砧落地音（领先者才播）；第 7 击完成音同为落地。
+ * 段成功 / 脱拍音遵循「领先者发声」：与飞渡浮舟并行推进时，只有进度领先的式出声。</p>
  *
  * <p><b>逐段架势增伤（叠加）</b>：第 3 段起，每段成功<b>且该击为有效攻击（未被完美弹反）</b>
  * → 受击方在普通换算外额外扣 {@code bonus-per-stage-stance}(3) × <b>已叠有效段数</b>：
@@ -45,16 +48,21 @@ public final class IsshinSevenStrike implements Mystery {
     private final StanceManager stanceManager;
     private final PaperDollManager paperDollManager;
     private final KnockbackGuard knockbackGuard;
+    private final IntSupplier tick;
+    private final BiFunction<Mystery, UUID, Integer> rivalTop;
 
     /** 玩家 → 连段进度。 */
     private final Map<UUID, Combo> combo = new HashMap<>();
 
     public IsshinSevenStrike(MysteryConfig config, StanceManager stanceManager,
-                             PaperDollManager paperDollManager, KnockbackGuard knockbackGuard) {
+                             PaperDollManager paperDollManager, KnockbackGuard knockbackGuard,
+                             IntSupplier tick, BiFunction<Mystery, UUID, Integer> rivalTop) {
         this.config = config;
         this.stanceManager = stanceManager;
         this.paperDollManager = paperDollManager;
         this.knockbackGuard = knockbackGuard;
+        this.tick = tick;
+        this.rivalTop = rivalTop;
     }
 
     @Override
@@ -66,35 +74,35 @@ public final class IsshinSevenStrike implements Mystery {
     public void onAttack(Player attacker, Player victim, boolean parried) {
         double[] intervals = config.isshinIntervals();
         int totalHits = intervals.length + 1; // 6 段间隔 → 7 击
-        long window = Math.round(config.isshinToleranceTicks() * 50.0);
-        long now = System.nanoTime() / 1_000_000L;
+        int tolBeats = (int) Math.ceil(config.isshinToleranceTicks()); // 容差按拍（ceil）
+        int nowTick = tick.getAsInt();  // 按拍判定的 tick 时基
         UUID uuid = attacker.getUniqueId();
         Combo p = combo.get(uuid);
         if (p == null) {
-            combo.put(uuid, new Combo(now)); // 第一击：无音、无增伤
+            combo.put(uuid, new Combo(nowTick)); // 第一击：无音、无增伤
             org.alpha.sekiroBedwar.api.internal.SekiroApiImpl.techStart(uuid,
                     org.alpha.sekiroBedwar.api.TechniqueId.ISSHIN_SEVEN_STRIKE);
             return;
         }
         if (p.hits >= totalHits) {
-            p.restart(now); // 防御性（完成即移除，理论不可达）
+            p.restart(nowTick); // 防御性（完成即移除，理论不可达）
             return;
         }
-        long expected = Math.round(intervals[p.hits] * 50.0); // p.hits = 已完成击数 = 间隔下标
-        long delta = now - p.lastHitMs;
-        if (delta < expected - window || delta > expected + window) {
+        int target = (int) Math.round(intervals[p.hits - 1]); // 已完成 p.hits 击 → 第 p.hits-1 号间隔（0 基）
+        int delta = nowTick - p.lastHitTick;
+        if (Math.abs(delta - target) > tolBeats) {
             org.alpha.sekiroBedwar.api.internal.SekiroApiImpl.techFail(uuid,
                     org.alpha.sekiroBedwar.api.TechniqueId.ISSHIN_SEVEN_STRIKE,
                     org.alpha.sekiroBedwar.api.TechniqueFailReason.OUT_OF_RHYTHM, p.hits);
-            if (!p.breakNotified) { // 脱拍打磨音：连续脱拍链只播一次
+            if (!p.breakNotified && rivalTop.apply(this, uuid) <= p.hits) { // 脱拍音：链内一次 + 领先者才播
                 attacker.playSound(attacker.getLocation(), Sound.BLOCK_ANVIL_USE, 1.0f, 1.0f);
-                p.breakNotified = true;
             }
-            p.restart(now); // 本击作为新的一式
+            p.breakNotified = true;
+            p.restart(nowTick); // 本击作为新的一式
             return;
         }
         p.hits++;
-        p.lastHitMs = now;
+        p.lastHitTick = nowTick;
         p.breakNotified = false; // 成功接段：脱拍提示复位
         int hits = p.hits;
         org.alpha.sekiroBedwar.api.internal.SekiroApiImpl.techHit(uuid,
@@ -107,10 +115,11 @@ public final class IsshinSevenStrike implements Mystery {
                 org.alpha.sekiroBedwar.api.internal.SekiroApiImpl.techFail(uuid,
                         org.alpha.sekiroBedwar.api.TechniqueId.ISSHIN_SEVEN_STRIKE,
                         org.alpha.sekiroBedwar.api.TechniqueFailReason.FINISHER_NOT_MET, hits - 1);
-                if (!p.breakNotified) {
+                if (!p.breakNotified && rivalTop.apply(this, uuid) <= hits) {
                     attacker.playSound(attacker.getLocation(), Sound.BLOCK_ANVIL_USE, 1.0f, 1.0f);
                 }
-                p.restart(now); // 本击作为新一式重连
+                p.breakNotified = true;
+                p.restart(nowTick); // 本击作为新一式重连
                 return;
             }
             combo.remove(uuid);
@@ -128,8 +137,10 @@ public final class IsshinSevenStrike implements Mystery {
                     org.alpha.sekiroBedwar.api.TechniqueId.ISSHIN_SEVEN_STRIKE, totalHits, valid);
             return;
         }
-        if (hits >= 3) { // 第 3 击起每段成功：铁砧落地音 + 刷新 1s 防击退（刷新不叠加）
-            attacker.playSound(attacker.getLocation(), Sound.BLOCK_ANVIL_LAND, 1.0f, 1.0f);
+        if (hits >= 3) { // 第 3 击起每段成功：铁砧落地音（领先者才播）+ 刷新 1s 防击退（不叠加）
+            if (rivalTop.apply(this, uuid) <= hits) {
+                attacker.playSound(attacker.getLocation(), Sound.BLOCK_ANVIL_LAND, 1.0f, 1.0f);
+            }
             knockbackGuard.refresh(uuid);
         }
         if (hits >= 4) { // 第 3~5 段（第 4/5/6 击）：有效击逐段叠加架势增伤
@@ -194,21 +205,27 @@ public final class IsshinSevenStrike implements Mystery {
         combo.clear();
     }
 
-    /** 连段进度：已完成击数 / 上一击时刻 / 脱拍链是否已提示 / 已叠有效段数。 */
+    @Override
+    public int comboProgress(UUID player) {
+        Combo p = combo.get(player);
+        return p == null ? 0 : p.hits;
+    }
+
+    /** 连段进度：已完成击数 / 上一击 tick 序号 / 脱拍链是否已提示 / 已叠有效段数。 */
     private static final class Combo {
         int hits;
-        long lastHitMs;
+        int lastHitTick;
         boolean breakNotified;
         int validStages;
 
-        Combo(long firstHitMs) {
+        Combo(int firstHitTick) {
             this.hits = 1;
-            this.lastHitMs = firstHitMs;
+            this.lastHitTick = firstHitTick;
         }
 
-        void restart(long now) {
+        void restart(int nowTick) {
             this.hits = 1;
-            this.lastHitMs = now;
+            this.lastHitTick = nowTick;
             this.validStages = 0;
         }
     }

@@ -11,18 +11,19 @@ import java.util.List;
  * <code>mystery:</code> 两段。
  *
  * <p><b>无敌帧</b>：{@code iframe.global-enabled}（默认 true = 全局有，同原版）与
- * {@code iframe.duel-enabled}（默认 false = 决斗期间无）。</p>
+ * {@code iframe.duel-enabled}（默认 false = 决斗期间无）。对局外一律原版行为，
+ * global-enabled 仅作用于对局内（决斗之外）。</p>
  *
- * <p><b>秘传武技</b>：第一式·飞渡浮舟（{@code mystery.fei-du-fu-zhou}）连击间隔序列
- * （tick，可为小数，判定按 毫秒 = tick×50 ± 容差×50）、容差、第 6 击架势加成与完成奖励；
- * 第二式·苇名十字斩（{@code mystery.yamedo-cross-slash}）二连间隔 / 容差 / 击退级别 /
- * 架势扣减与恢复。列表缺省时代码内置默认兜底（服务器旧 duel.yml 缺段 =
- * 模块静默失效的教训）。</p>
+ * <p><b>秘传武技</b>：连击判定统一按服务器 tick 数拍距
+ * （{@code |Δtick − 目标拍| ≤ ceil(容差拍)}）；各式参数见
+ * {@code mystery.fei-du-fu-zhou / yamedo-cross-slash / long-shan / isshin-seven-strike}。
+ * 列表型配置缺省时用代码内置默认兜底（缺段=空表会导致模块静默失效）。</p>
  */
 public final class MysteryConfig {
 
-    /** 内置默认连击间隔（tick）：1→2 至 6→7，共 6 个间隔、7 次攻击。 */
-    static final double[] DEFAULT_FDFZ_INTERVALS = {7.3, 10.0, 5.7, 5.3, 5.7, 16.0};
+    /** 内置默认连击间隔（拍）：1→2 至 6→7，共 6 个间隔、7 次攻击。
+     *  判定按 tick 数拍，目标应为整数拍（小数拍在整 tick 命中世界里无可达解）。 */
+    static final double[] DEFAULT_FDFZ_INTERVALS = {7.0, 10.0, 6.0, 5.0, 6.0, 16.0};
 
     /** 一心七连默认间隔（tick）：7 / 5 / 5 / 6 / 8 / 10（第 7 击必须为危攻击）。 */
     static final double[] DEFAULT_ISSHIN_INTERVALS = {7.0, 5.0, 5.0, 6.0, 8.0, 10.0};
@@ -78,8 +79,8 @@ public final class MysteryConfig {
     private int isshinRewardPaperDolls;
     private double isshinRewardStance;
 
-    // ---- 两式共用：换刀 → 起手动作衔接窗 ----
-    private long armConnectMs;
+    // ---- 两式共用：换刀 → 起手动作衔接窗（拍） ----
+    private double armConnectTicks;
 
     // ---- 第三击起的防击退护身（飞渡浮舟 / 一心七连） ----
     private double knockbackGuardSeconds;
@@ -104,7 +105,7 @@ public final class MysteryConfig {
         this.fdfzName = yaml.getString("mystery.fei-du-fu-zhou.name", "飞渡浮舟");
         this.fdfzIntervals = parseIntervals(yaml.getDoubleList("mystery.fei-du-fu-zhou.intervals-ticks"),
                 DEFAULT_FDFZ_INTERVALS, "飞渡浮舟");
-        this.fdfzToleranceTicks = Math.max(0.0, yaml.getDouble("mystery.fei-du-fu-zhou.tolerance-ticks", 0.2));
+        this.fdfzToleranceTicks = Math.max(0.0, yaml.getDouble("mystery.fei-du-fu-zhou.tolerance-ticks", 0.5));
         this.fdfzSixthBonusStance = Math.max(0.0, yaml.getDouble("mystery.fei-du-fu-zhou.sixth-bonus-stance", 10.0));
         this.fdfzRewardPaperDolls = Math.max(0, yaml.getInt("mystery.fei-du-fu-zhou.reward-paper-dolls", 2));
         this.fdfzRewardStance = Math.max(0.0, yaml.getDouble("mystery.fei-du-fu-zhou.reward-stance", 5.0));
@@ -147,8 +148,7 @@ public final class MysteryConfig {
         this.isshinRewardPaperDolls = Math.max(0, yaml.getInt("mystery.isshin-seven-strike.reward-paper-dolls", 2));
         this.isshinRewardStance = Math.max(0.0, yaml.getDouble("mystery.isshin-seven-strike.reward-stance", 4.0));
 
-        this.armConnectMs = Math.max(0L,
-                Math.round(Math.max(0.0, yaml.getDouble("mystery.arm-connect-ticks", 1.0)) * 50.0)) + 10L;
+        this.armConnectTicks = Math.max(0.0, yaml.getDouble("mystery.arm-connect-ticks", 4.0));
         this.knockbackGuardSeconds = Math.max(0.0, yaml.getDouble("mystery.knockback-guard-seconds", 1.0));
     }
 
@@ -341,11 +341,11 @@ public final class MysteryConfig {
     // ---- 衔接窗 ----
 
     /**
-     * 换刀 → 起手动作（苇名第一击 / 龙闪左键）的衔接窗口（毫秒）：
-     * {@code mystery.arm-connect-ticks}×50 + 10ms 主线程处理抖动余量（默认 1 tick → 60ms）。
+     * 换刀 → 起手动作（苇名第一击 / 龙闪左键）的衔接窗口（拍）：判定 = tick 计数差
+     * ≤ ceil 该值，默认 4 拍（人手拔刀可及）。
      */
-    public long armConnectMs() {
-        return armConnectMs;
+    public double armConnectTicks() {
+        return armConnectTicks;
     }
 
     /** 第三击起每次成功命中刷新的防击退时长（秒；0 = 关闭）。 */

@@ -18,7 +18,7 @@ import java.util.Set;
  */
 public final class MobBanConfig {
 
-    /** 内置默认禁生列表（列表型配置必须有代码默认——服务器旧 duel.yml 缺段即静默失效的教训）。 */
+    /** 内置默认禁生列表（列表型配置带代码默认：缺段 = 空表会让规则静默失效）。 */
     static final String[] DEFAULT_BLOCKED = {"IRON_GOLEM", "SHEEP"};
 
     private final SekiroBedwar plugin;

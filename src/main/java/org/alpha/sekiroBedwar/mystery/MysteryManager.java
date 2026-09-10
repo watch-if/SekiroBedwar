@@ -31,8 +31,11 @@ public final class MysteryManager implements Listener {
 
     private final SekiroBedwar plugin;
     private final List<Mystery> arts = new ArrayList<>();
-    /** 第三击起防击退护身（飞渡浮舟 / 一心七连共用）。 */
+    /** 防击退护身（飞渡浮舟 / 一心七连共用）。 */
     private final KnockbackGuard guard;
+    /** 自维护 tick 时钟（spigot 无 getCurrentTick，且必须纯 spigot API）：1t 任务 +1。 */
+    private int tickClock;
+    private org.bukkit.scheduler.BukkitTask tickTask;
 
     public MysteryManager(SekiroBedwar plugin, MysteryConfig config,
                           StanceManager stanceManager, PaperDollManager paperDollManager,
@@ -40,19 +43,39 @@ public final class MysteryManager implements Listener {
                           org.alpha.sekiroBedwar.duel.DuelConfig duelConfig) {
         this.plugin = plugin;
         this.guard = new KnockbackGuard(config);
+        java.util.function.IntSupplier tick = () -> tickClock;
+        java.util.function.BiFunction<Mystery, UUID, Integer> rivalTop = this::topProgress;
         // 已实现的秘传（新增秘传：构造 + 在此 add 一行）
         if (config.fdfzEnabled()) {
-            arts.add(new FeiduFuzhou(config, stanceManager, paperDollManager, guard));
+            arts.add(new FeiduFuzhou(config, stanceManager, paperDollManager, guard, tick, rivalTop));
         }
         if (config.yameEnabled()) {
-            arts.add(new YamedoCrossSlash(config, stanceManager));
+            arts.add(new YamedoCrossSlash(config, stanceManager, tick, rivalTop));
         }
         if (config.lsEnabled()) {
-            arts.add(new LongShan(plugin, config, stanceManager, paperDollManager, duelManager, duelConfig));
+            arts.add(new LongShan(plugin, config, stanceManager, paperDollManager, duelManager, duelConfig,
+                    tick, rivalTop));
         }
         if (config.isshinEnabled()) {
-            arts.add(new IsshinSevenStrike(config, stanceManager, paperDollManager, guard));
+            arts.add(new IsshinSevenStrike(config, stanceManager, paperDollManager, guard, tick, rivalTop));
         }
+    }
+
+    /** 除 {@code self} 外其他武技在该玩家身上的最高连段进度（领先者发声判定用）。 */
+    private int topProgress(Mystery self, UUID player) {
+        int top = 0;
+        for (Mystery art : arts) {
+            if (art == self) {
+                continue;
+            }
+            top = Math.max(top, art.comboProgress(player));
+        }
+        return top;
+    }
+
+    /** 当前 tick 计数（节奏判定的统一时基，宿主 1t 任务驱动）。 */
+    public int tick() {
+        return tickClock;
     }
 
     public void enable() {
@@ -62,6 +85,8 @@ public final class MysteryManager implements Listener {
         }
         plugin.getServer().getPluginManager().registerEvents(this, plugin);
         plugin.getServer().getPluginManager().registerEvents(guard, plugin);
+        tickTask = plugin.getServer().getScheduler()
+                .runTaskTimer(plugin, () -> tickClock++, 1L, 1L);
         PlayerLeaveEvent.handle(plugin, ev -> clearPlayer(ev.getPlayer().getUuid(), TechniqueCancelReason.LEFT));
         for (Mystery art : arts) {
             plugin.getLogger().info("秘传已启用：" + art.id());
@@ -69,6 +94,10 @@ public final class MysteryManager implements Listener {
     }
 
     public void disable() {
+        if (tickTask != null) {
+            tickTask.cancel();
+            tickTask = null;
+        }
         for (Mystery art : arts) {
             art.clearAll();
             art.shutdown();

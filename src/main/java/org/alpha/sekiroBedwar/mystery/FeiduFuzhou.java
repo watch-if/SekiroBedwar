@@ -8,15 +8,19 @@ import org.bukkit.entity.Player;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
+import java.util.function.BiFunction;
+import java.util.function.IntSupplier;
 
 /**
  * 第一秘传·飞渡浮舟（{@link Mystery} 实现）：特定节奏的七连击。
  *
  * <p><b>识别</b>：连续 <b>近战命中</b>（含被完美弹反的命中——仍算打出的一击，只是第 6 击
- * 被弹反则不吃加成）依次满足相邻间隔序列（默认 7.3 / 10 / 5.7 / 5.3 / 5.7 / 16 tick，
- * 共 6 段、第 1→7 击；毫秒口径 = tick×50 ± 容差 0.2tick×50），以服务器单调时钟计时。
- * 间隔窗口中的【长空隙】（如 2→3 与 6→7 之间）允许玩家右键格挡 / 投掷投掷物——这些动作
- * 不产生近战命中、不进序列也不打断序列，纯按命中间隔判定。</p>
+ * 被弹反则不吃加成）依次满足相邻间隔序列（默认 7 / 10 / 6 / 5 / 6 / 16 拍，
+ * 共 6 段、第 1→7 击）。<b>判定按服务器 tick 数拍距</b>：
+ * {@code |Δtick − 目标拍| ≤ ceil(容差)}——容差向上取整为拍：0 = 必须踩准，
+ * 0.2~0.5 = 允许 ±1 拍。段成功 / 脱拍音遵循「领先者发声」：同一玩家并行多式时，
+ * 只有进度领先的式出声。间隔窗口中的【长空隙】（如 2→3 与 6→7 之间）允许玩家
+ * 右键格挡 / 投掷投掷物——这些动作不产生近战命中、不进序列也不打断。</p>
  *
  * <p><b>第 6 击加成</b>：走到第 6 击且该击有效命中（未被完美弹反）→ 受击方架势在普通
  * 换算之外<b>额外 −{@code sixth-bonus-stance}(10)</b>。</p>
@@ -35,16 +39,21 @@ public final class FeiduFuzhou implements Mystery {
     private final StanceManager stanceManager;
     private final PaperDollManager paperDollManager;
     private final KnockbackGuard knockbackGuard;
+    private final IntSupplier tick;
+    private final BiFunction<Mystery, UUID, Integer> rivalTop;
 
     /** 玩家 → 连击进度。 */
     private final Map<UUID, ComboProgress> progress = new HashMap<>();
 
     public FeiduFuzhou(MysteryConfig config, StanceManager stanceManager,
-                       PaperDollManager paperDollManager, KnockbackGuard knockbackGuard) {
+                       PaperDollManager paperDollManager, KnockbackGuard knockbackGuard,
+                       IntSupplier tick, BiFunction<Mystery, UUID, Integer> rivalTop) {
         this.config = config;
         this.stanceManager = stanceManager;
         this.paperDollManager = paperDollManager;
         this.knockbackGuard = knockbackGuard;
+        this.tick = tick;
+        this.rivalTop = rivalTop;
     }
 
     @Override
@@ -56,46 +65,48 @@ public final class FeiduFuzhou implements Mystery {
     public void onAttack(Player attacker, Player victim, boolean parried) {
         double[] intervals = config.fdfzIntervals();
         int totalHits = intervals.length + 1;   // 6 段间隔 → 7 击
-        long targetWindow = Math.round(config.fdfzToleranceTicks() * 50.0);
-        long now = System.nanoTime() / 1_000_000L;
+        int tolBeats = (int) Math.ceil(config.fdfzToleranceTicks()); // 容差按拍（ceil：非零容差至少 ±1 拍）
+        int nowTick = tick.getAsInt();  // 按拍判定的 tick 时基
         UUID uuid = attacker.getUniqueId();
         ComboProgress p = progress.get(uuid);
 
         if (p == null) {
-            progress.put(uuid, new ComboProgress(now));
+            progress.put(uuid, new ComboProgress(nowTick));
             org.alpha.sekiroBedwar.api.internal.SekiroApiImpl.techStart(uuid,
                     org.alpha.sekiroBedwar.api.TechniqueId.FEIDU_FUZU); // 公共 API：第一击 = 连段启动
             return;
         }
         if (p.hits >= totalHits) {
-            p.restart(now); // 理论不可达（完成即移除），防御性重开
+            p.restart(nowTick); // 理论不可达（完成即移除），防御性重开
             return;
         }
-        long expected = Math.round(intervals[p.hits] * 50.0); // p.hits = 已完成击数 = 间隔下标
-        long delta = now - p.lastHitMs;
-        if (delta < expected - targetWindow || delta > expected + targetWindow) {
+        int target = (int) Math.round(intervals[p.hits - 1]); // 已完成 p.hits 击 → 第 p.hits-1 号间隔（0 基）
+        int delta = nowTick - p.lastHitTick;
+        if (Math.abs(delta - target) > tolBeats) {
             org.alpha.sekiroBedwar.api.internal.SekiroApiImpl.techFail(uuid,
                     org.alpha.sekiroBedwar.api.TechniqueId.FEIDU_FUZU,
                     org.alpha.sekiroBedwar.api.TechniqueFailReason.OUT_OF_RHYTHM, p.hits);
-            // 脱拍音只在一段连续脱拍中播一次（后续继续乱挥不连播，直到某段成功接上才重置）
-            if (!p.breakNotified) {
+            // 脱拍音：连续脱拍链只播一次 + 领先者才播（并行别式在推进时本式落后 = 静默重开）
+            if (!p.breakNotified && rivalTop.apply(this, uuid) <= p.hits) {
                 attacker.playSound(attacker.getLocation(), Sound.BLOCK_ANVIL_USE, 1.0f, 1.0f);
-                p.breakNotified = true;
             }
-            p.restart(now); // 本击脱拍：作为新的一式
+            p.breakNotified = true;
+            p.restart(nowTick); // 本击脱拍：作为新的一式
             return;
         }
         p.hits++;
-        p.lastHitMs = now;
+        p.lastHitTick = nowTick;
         p.breakNotified = false; // 成功接段：脱拍提示复位
         if (!parried) {
             p.validHits++; // 公共完成事件的有效击统计
         }
         org.alpha.sekiroBedwar.api.internal.SekiroApiImpl.techHit(uuid,
                 org.alpha.sekiroBedwar.api.TechniqueId.FEIDU_FUZU, p.hits, parried, victim.getUniqueId());
-        // 第 3 击起每段成功 = 铁砧落地音 + 刷新 1s 防击退；第 7 击由完成奖励统一播（不叠加）
+        // 第 3 击起每段成功 = 铁砧落地音（领先者才播）+ 刷新 1s 防击退；第 7 击由完成音统一播
         if (p.hits >= 3 && p.hits < totalHits) {
-            attacker.playSound(attacker.getLocation(), Sound.BLOCK_ANVIL_LAND, 1.0f, 1.0f);
+            if (rivalTop.apply(this, uuid) <= p.hits) {
+                attacker.playSound(attacker.getLocation(), Sound.BLOCK_ANVIL_LAND, 1.0f, 1.0f);
+            }
             knockbackGuard.refresh(uuid);
         }
 
@@ -146,21 +157,28 @@ public final class FeiduFuzhou implements Mystery {
         progress.clear();
     }
 
-    /** 连击进度：已完成击数 + 上一击时刻（单调毫秒）+ 本轮脱拍是否已提示 + 有效击计数。 */
+    @Override
+    public int comboProgress(UUID player) {
+        ComboProgress p = progress.get(player);
+        return p == null ? 0 : p.hits;
+    }
+
+    /** 连击进度：已完成击数 + 上一击 tick 序号 + 本轮脱拍是否已提示 + 有效击计数。 */
     private static final class ComboProgress {
         int hits;
-        long lastHitMs;
+        int lastHitTick;
         boolean breakNotified;
         int validHits;
 
-        ComboProgress(long firstHitMs) {
+        ComboProgress(int firstHitTick) {
             this.hits = 1;
-            this.lastHitMs = firstHitMs;
+            this.lastHitTick = firstHitTick;
         }
 
-        void restart(long now) {
+        void restart(int nowTick) {
             this.hits = 1;
-            this.lastHitMs = now;
+            this.lastHitTick = nowTick;
+            this.validHits = 0; // 新一式重新计数
         }
     }
 }
