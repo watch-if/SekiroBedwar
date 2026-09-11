@@ -25,7 +25,8 @@ public final class DeflectListener implements Listener {
     }
 
     /**
-     * 持盾右键触发（主手或副手，直接读玩家手持，不依赖 event 手位字段）。
+     * <b>主手</b>持盾右键触发（直接读主手物品，不依赖 event 手位字段）。
+     * 副手持盾不触发——副手盾=原版普通格挡，不扣纸人、不开窗（修复「副手举盾扣纸人无窗口」）。
      * 右键可交互方块（箱子 / 门 / 工作台等）不触发——防误开方块白扣纸人。
      */
     @EventHandler(priority = EventPriority.NORMAL, ignoreCancelled = false)
@@ -35,7 +36,7 @@ public final class DeflectListener implements Listener {
             return;
         }
         Player player = event.getPlayer();
-        if (!DeflectManager.hasShieldInHand(player)) {
+        if (!DeflectManager.hasShieldInMainHand(player)) {
             return;
         }
         if (action == Action.RIGHT_CLICK_BLOCK && isInteractable(event.getClickedBlock())) {

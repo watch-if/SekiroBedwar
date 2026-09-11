@@ -41,6 +41,12 @@ public final class AttributeConfig {
     private int burnFireTicks;
     private double burnOutsideChance;
     private int burnWitherSeconds;
+    // 炎上 Lv2 附加：TNT（独立掷签，与点燃互不影响）
+    private double burnTntOutsideChance;
+    private int burnTntWindowFuseTicks;
+    private int burnTntOutsideFuseTicks;
+    private double burnTntExplosionPower;
+    private boolean burnTntBlockDamage;
 
     // 还原
     private boolean restoreEnabled;
@@ -87,6 +93,11 @@ public final class AttributeConfig {
         this.burnFireTicks = Math.max(1, yaml.getInt("burn.fire-ticks", 80));
         this.burnOutsideChance = clamp01(yaml.getDouble("burn.out-of-window-chance", 0.3));
         this.burnWitherSeconds = Math.max(1, yaml.getInt("burn.wither-duration-seconds", 10));
+        this.burnTntOutsideChance = clamp01(yaml.getDouble("burn.tnt-outside-chance", 0.1));
+        this.burnTntWindowFuseTicks = Math.max(1, yaml.getInt("burn.tnt-window-fuse-ticks", 20));
+        this.burnTntOutsideFuseTicks = Math.max(1, yaml.getInt("burn.tnt-outside-fuse-ticks", 40));
+        this.burnTntExplosionPower = Math.max(0.0, yaml.getDouble("burn.tnt-explosion-power", 2.0));
+        this.burnTntBlockDamage = yaml.getBoolean("burn.tnt-block-damage", false);
 
         this.restoreEnabled = yaml.getBoolean("restore.enabled", true);
         this.restoreName = yaml.getString("restore.name", "还原");
@@ -206,6 +217,31 @@ public final class AttributeConfig {
 
     public int burnWitherSeconds() {
         return burnWitherSeconds;
+    }
+
+    /** Lv2 非窗口有效攻击在受击方脚下放 TNT 的概率（独立于点燃掷签）。 */
+    public double burnTntOutsideChance() {
+        return burnTntOutsideChance;
+    }
+
+    /** Lv2 窗口内首次有效攻击 TNT 的引信（tick，默认 20 = 1s）。 */
+    public int burnTntWindowFuseTicks() {
+        return burnTntWindowFuseTicks;
+    }
+
+    /** Lv2 非窗口触发 TNT 的引信（tick，默认 40 = 2s）。 */
+    public int burnTntOutsideFuseTicks() {
+        return burnTntOutsideFuseTicks;
+    }
+
+    /** TNT 爆炸威力（setYield，默认 2.0；原版 TNT 为 4）。 */
+    public double burnTntExplosionPower() {
+        return burnTntExplosionPower;
+    }
+
+    /** TNT 是否破坏方块（默认 false = 纯对玩家爆炸，不伤商店台/岛屿/床；对非玩家实体的伤害始终免疫）。 */
+    public boolean burnTntBlockDamage() {
+        return burnTntBlockDamage;
     }
 
     public boolean restoreEnabled() {

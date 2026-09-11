@@ -23,10 +23,11 @@ import java.util.UUID;
  * 盾牌弹反（独立模块）：主手举盾消耗纸人 → 举盾后一段时间全部按完美弹反窗口处理 →
  * 窗口结束强制解除举盾。
  *
- * <p><b>触发</b>：持盾右键（{@code PlayerInteractEvent} RIGHT_CLICK，主 / 副手任一持盾，
- * 直接读玩家手持不依赖事件手位字段）→ <b>即时扣 {@code deflect.paper-doll-cost} 纸人并开窗</b>；
- * 右键容器 / 门等可交互方块不触发（防误开方块白扣）；已处于弹反窗口内再次右键不重复扣费。
- * 音效反馈（无文字）：成功开窗盾牌格挡声、纸人不足低音提示。</p>
+ * <p><b>触发</b>：<b>主手</b>持盾右键（{@code PlayerInteractEvent} RIGHT_CLICK，
+ * 直接读主手物品不依赖事件手位字段）→ <b>即时扣 {@code deflect.paper-doll-cost} 纸人并开窗</b>；
+ * <b>副手持盾不触发</b>（副手盾就是原版普通格挡，不扣纸人、不开窗——修复「副手举盾扣了纸人
+ * 却没有窗口」）；右键容器 / 门等可交互方块不触发（防误开方块白扣）；
+ * 已处于弹反窗口内再次右键不重复扣费。音效反馈（无文字）：成功开窗盾牌格挡声、纸人不足低音提示。</p>
  *
  * <p><b>窗口语义</b>：{@code deflect.deflect-window-ms}（默认 2000ms）内来袭的
  * <b>近战命中一律按完美弹反</b>处理（由 {@code ParryManager} 查询 {@link #isDeflecting}
@@ -120,10 +121,9 @@ public final class DeflectManager {
         return true;
     }
 
-    /** 任一手持盾（主手或副手）。 */
-    public static boolean hasShieldInHand(Player player) {
-        return player.getInventory().getItemInMainHand().getType() == Material.SHIELD
-                || player.getInventory().getItemInOffHand().getType() == Material.SHIELD;
+    /** 是否<b>主手</b>持盾（仅主手举盾触发纸人弹反；副手盾=原版普通格挡，不扣纸人不开窗）。 */
+    public static boolean hasShieldInMainHand(Player player) {
+        return player.getInventory().getItemInMainHand().getType() == Material.SHIELD;
     }
 
     /** 周期检测：窗口结束 → 移除记录 + 强制解除举盾（盾牌 1 tick 冷却打断持盾）。 */

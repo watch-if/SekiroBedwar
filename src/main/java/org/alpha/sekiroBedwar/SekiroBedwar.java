@@ -164,8 +164,12 @@ public final class SekiroBedwar extends JavaPlugin {
         this.stanceRecoveryTask = new StanceRecoveryTask(this, stanceConfig, stanceManager);
         this.stanceRecoveryTask.enable();
 
-        // 处决窗口期间双方可逃离决斗场地（越界拉回 / 主动传送均豁免）
-        this.duelAreaGuard.setEscapeWindowPredicate(uuid -> this.stanceManager.isBroken(uuid));
+        // 处决窗口期间双方可逃离决斗场地（越界拉回 / 主动传送均豁免）。
+        // 豁免延续到窗口【到期之后】：到期 → 半额结算结束决斗之间有 ≤ settle-check-ticks
+        // 的检测空窗，若空窗内 isBroken 变 false 就恢复拉回，会把逃离者拽回圈内；
+        // 架势状态随决斗结束移除（endDuel / purgePlayer），到期豁免自然失效，不会跨局泄漏。
+        this.duelAreaGuard.setEscapeWindowPredicate(uuid ->
+                this.stanceManager.isBroken(uuid) || this.stanceManager.isExecutionWindowExpired(uuid));
 
         // 决斗结算：崩条/普通/虚空三情形按比例实际转移物品；第三方介入回滚到决斗开始资源快照
         this.settlementManager = new SettlementManager(this, stanceConfig, new SettlementConfig(this),

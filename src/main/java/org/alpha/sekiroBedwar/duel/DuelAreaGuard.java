@@ -47,8 +47,8 @@ public final class DuelAreaGuard implements KnockbackHandler {
     private final Map<UUID, KnockbackInfo> knockbacks = new ConcurrentHashMap<>();
 
     /**
-     * “处决窗口”逃离豁免谓词：某玩家处于崩条的处决窗口时，双方都可离开决斗场地
-     * （不被拉回、不拦截主动传送）。默认恒 false（不豁免）；由 SekiroBedwar 注入。
+     * “处决窗口”逃离豁免谓词：某玩家处于崩条的处决窗口（<b>含到期后的结算检测空窗</b>）时，
+     * 双方都可离开决斗场地（不被拉回、不拦截主动传送）。默认恒 false（不豁免）；由 SekiroBedwar 注入。
      */
     private Predicate<UUID> escapeWindowPredicate = uuid -> false;
 
@@ -78,8 +78,15 @@ public final class DuelAreaGuard implements KnockbackHandler {
     }
 
     /**
-     * 注入处决窗口逃离豁免谓词（由 SekiroBedwar 传入 {@code uuid -> stanceManager.isBroken(uuid)}）。
+     * 注入处决窗口逃离豁免谓词（由 SekiroBedwar 传入
+     * {@code uuid -> stanceManager.isBroken(uuid) || stanceManager.isExecutionWindowExpired(uuid)}）。
      * 谓词为真的玩家处于崩条处决窗口：其所在决斗双方可自由离开场地。
+     *
+     * <p><b>为何要含到期豁免</b>：处决窗口到期 → 半额结算结束决斗之间有
+     * {@code settle-check-ticks}（默认 5 tick）的检测空窗；若到期瞬间 {@code isBroken()} 变 false
+     * 就恢复拉回，空窗内先跑的区域检测会把逃离者拽回圈内（结算随即结束决斗，人却被白拉回来）。
+     * {@code isExecutionWindowExpired()} 在架势状态移除（决斗结束 / 下线）前恒真，
+     * 恰好覆盖该空窗且不会跨决斗泄漏。</p>
      */
     public void setEscapeWindowPredicate(Predicate<UUID> escapeWindowPredicate) {
         this.escapeWindowPredicate = escapeWindowPredicate == null ? (uuid -> false) : escapeWindowPredicate;
@@ -181,7 +188,7 @@ public final class DuelAreaGuard implements KnockbackHandler {
             if (island == null) {
                 continue;
             }
-            // 处决窗口：任一方崩条 → 双方可逃离决斗场地，跳过越界拉回
+            // 处决窗口（含到期后的结算检测空窗）：任一方崩条 → 双方可逃离决斗场地，跳过越界拉回
             if (escapeWindowPredicate.test(duel.getPlayerAUuid())
                     || escapeWindowPredicate.test(duel.getPlayerBUuid())) {
                 continue;

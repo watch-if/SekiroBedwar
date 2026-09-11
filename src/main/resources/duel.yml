@@ -448,6 +448,15 @@ rust:
 #   Lv.1（30 金）：窗口内未被弹反的命中给对方火焰附加（+fire-ticks 刻燃烧，默认 4s，命中续窗）
 #   Lv.2（34 金）：窗口内在火焰附加基础上【同时叠加凋零】；非窗口期未被弹反的命中
 #                  有 out-of-window-chance（30%）概率直接点燃对方
+#   Lv.2 附加 TNT（与点燃掷签【相互独立】，各 roll 各的）：
+#     · 窗口内【第一次】有效命中 → 受击方脚下放 TNT，引信 tnt-window-fuse-ticks（默认 20 刻=1s）
+#       ——每窗口仅一发，窗口续期不重置，新窗口开启才恢复额度；
+#     · 非窗口期有效命中另有 tnt-outside-chance（10%）概率 → 受击方脚下放 TNT，
+#       引信 tnt-outside-fuse-ticks（默认 40 刻=2s）。
+#   TNT 原地起爆（速度清零），威力 tnt-explosion-power（setYield；原版 TNT=4，默认 2 收敛破坏面）。
+#   爆炸为「纯对玩家」：不破坏任何方块（tnt-block-damage=false 时清爆炸方块列表——商店台/岛屿/床无损），
+#   且商店老板（村民/伪装玩家 NPC）等非玩家实体完全免疫爆炸伤害（修复「TNT 把商店炸死」）。
+#   tnt-block-damage: true 可恢复方块破坏（对非玩家实体的免疫始终生效）。
 burn:
   enabled: true
   name: "炎上"
@@ -462,6 +471,11 @@ burn:
   fire-ticks: 80
   out-of-window-chance: 0.3
   wither-duration-seconds: 10
+  tnt-outside-chance: 0.1
+  tnt-window-fuse-ticks: 20
+  tnt-outside-fuse-ticks: 40
+  tnt-explosion-power: 2.0
+  tnt-block-damage: false
 
 # ---------- 还原（AttributeManager，重置三选一） ----------
 # 购买后清空巴之雷 / 锈丸 / 炎上的等级与计数（并收回巴之雷 L2 三叉戟），可重新三选一；
@@ -514,7 +528,8 @@ paper-doll:
     paper-dolls-granted: 5
 
 # ---------- 盾牌弹反（DeflectManager，独立机制） ----------
-# 持盾右键（主/副手任一，直接读手持不依赖事件手位字段）→ 即时扣 paper-doll-cost 纸人开窗；
+# 【主手】持盾右键（直接读主手物品不依赖事件手位字段）→ 即时扣 paper-doll-cost 纸人开窗；
+# 副手持盾不触发（副手盾=原版普通格挡，不扣纸人、不开窗）；
 # 右键容器/门等可交互方块不触发（防误开白扣）。成功=盾牌格挡音效，纸人不足=低音提示（均无文字）
 # → 举盾后 deflect-window-ms（默认 2s）内全部按【完美弹反窗口】处理：来袭的每一记近战命中
 #   都完整弹开（免伤免击退 + 攻击方重创架势，与完美弹反完全一致），不受「举盾后 170ms」
