@@ -138,7 +138,7 @@ public final class DangerManager {
         event.setCancelled(true);
         sneakStart.remove(victim.getUniqueId());
         if (attacker != null) {
-            stanceManager.reduceStance(attacker.getUniqueId(), config.stancePenalty());
+            stanceManager.reduceStanceBy(victim.getUniqueId(), attacker.getUniqueId(), config.stancePenalty());
             stanceManager.markActive(attacker.getUniqueId());
         }
         org.alpha.sekiroBedwar.api.internal.SekiroApiImpl.dangerAttack(
@@ -153,12 +153,12 @@ public final class DangerManager {
         return config.stancePenalty();
     }
 
-    /** 危格挡惩罚：破盾 + 防守方扣架势。 */
-    public void applyShieldBreak(Player victim) {
+    /** 危格挡惩罚：破盾 + 防守方扣架势（attacker 为危攻击方 = 架势伤害造成方）。 */
+    public void applyShieldBreak(Player attacker, Player victim) {
         stanceManager.disableBlocking(victim.getUniqueId(), config.shieldBreakSeconds());
         int ticks = Math.max(1, (int) Math.ceil(config.shieldBreakSeconds() * 20.0));
         victim.setCooldown(Material.SHIELD, ticks);
-        stanceManager.reduceStance(victim.getUniqueId(), config.stancePenalty());
+        stanceManager.reduceStanceBy(attacker.getUniqueId(), victim.getUniqueId(), config.stancePenalty());
     }
 
     // ============ 忍具商店 GUI（下界合金长矛 + 突进） ============

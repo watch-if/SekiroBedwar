@@ -121,6 +121,30 @@ public final class DuelAreaGuard implements KnockbackHandler {
         knockbacks.put(victim.getUniqueId(), new KnockbackInfo(expireAt, direction));
     }
 
+    /**
+     * 记录一次击退（<b>显式方向</b>版本）：供自行施加位移、不走原版伤害击退的模块使用
+     * （如踩头/重锤风暴的借力弹走与被弹反击退）。
+     *
+     * <p>这些模块由插件直接 {@code setVelocity} 施加位移，原版伤害事件不会派发击退，
+     * 若不在此登记，越界位移会被判成「主动离开白圈」而被拉回——登记后走「击退位移豁免」
+     * 口径（决斗中被打飞可以真的掉进虚空）。</p>
+     *
+     * @param victim    被位移的玩家（必须在 ACTIVE/PENDING 决斗中才记录）
+     * @param direction 位移方向（只用水平分量；零向量忽略）
+     */
+    public void recordKnockback(Player victim, Vector direction) {
+        if (victim == null || direction == null
+                || !duelManager.isInDuel(victim.getUniqueId())) {
+            return;
+        }
+        Vector horizontal = direction.clone().setY(0.0);
+        if (horizontal.length() < 1.0e-6) {
+            return;
+        }
+        long expireAt = System.currentTimeMillis() + config.knockbackGraceTicks() * 50L;
+        knockbacks.put(victim.getUniqueId(), new KnockbackInfo(expireAt, horizontal.normalize()));
+    }
+
     /** 玩家下线：清理其击退记录（防泄漏）。 */
     @Override
     public void purge(UUID uuid) {

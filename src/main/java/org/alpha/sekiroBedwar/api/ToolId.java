@@ -28,7 +28,11 @@ public enum ToolId {
     /** 炎上：属性窗口开启（火焰附加生效）。 */
     BURN("burn", "炎上"),
     /** 僵尸头颅：左键释放恐怖区。 */
-    TERROR_HEAD("terror-head", "僵尸头颅");
+    TERROR_HEAD("terror-head", "僵尸头颅"),
+    /** 夜叉戮糖：右键使用（力量II + 架势伤害×1.5 + HP/架势上限减半）。 */
+    SUGAR("sugar", "夜叉戮糖"),
+    /** 踩头 / 重锤风暴：滞空近距按空格借力弹走（target = 被踩者）。 */
+    STOMP("stomp", "踩头·重锤风暴");
 
     private final String configKey;
     private final String displayName;

@@ -52,6 +52,8 @@ import org.alpha.sekiroBedwar.stance.StanceRecoveryTask;
 import org.alpha.sekiroBedwar.stance.StanceListener;
 import org.alpha.sekiroBedwar.stance.StanceManager;
 import org.alpha.sekiroBedwar.stance.StanceXpDisplay;
+import org.alpha.sekiroBedwar.sugar.SugarConfig;
+import org.alpha.sekiroBedwar.sugar.SugarManager;
 import org.alpha.sekiroBedwar.swordblock.SwordBlockingManager;
 import org.alpha.sekiroBedwar.terror.TerrorConfig;
 import org.alpha.sekiroBedwar.terror.TerrorManager;
@@ -128,6 +130,9 @@ public final class SekiroBedwar extends JavaPlugin {
     private AutoEquipManager autoEquipManager;
     private ArmorShopManager armorShopManager;
     private DurabilityGuardManager durabilityGuardManager;
+    private SugarManager sugarManager;
+    private org.alpha.sekiroBedwar.stomp.StompManager stompManager;
+    private org.alpha.sekiroBedwar.parry.ParryMarker parryMarker;
 
     @Override
     public void onEnable() {
@@ -233,6 +238,11 @@ public final class SekiroBedwar extends JavaPlugin {
         this.beadManager = new BeadManager(this, new BeadConfig(this), this.sekiroShopManager);
         this.beadManager.enable();
 
+        // 夜叉戮糖（消耗品忍具）：右键使用 → 力量II + 架势伤害×1.5 + HP/架势上限减半（代价换攻击）；
+        // 架势伤害倍率 / 上限缩放经 StanceManager 的两个 provider 统一生效（含攻击/弹开/识破/属性/秘传/巴之雷）
+        this.sugarManager = new SugarManager(this, new SugarConfig(this), this.stanceManager, this.sekiroShopManager);
+        this.sugarManager.enable();
+
         // 僵尸头颅 + 恐怖条（独立新机制）
         this.terrorManager = new TerrorManager(this, new TerrorConfig(this), this.paperDollManager, this.deflectManager);
         this.terrorManager.enable();
@@ -280,9 +290,13 @@ public final class SekiroBedwar extends JavaPlugin {
         ParryConfig parryConfig = new ParryConfig(this);
         this.parrySealManager = new ParrySealManager(this, parryConfig);
         this.parrySealManager.enable();
+        // 完美弹反标记：ParryManager 写入、踩头模块读取（共享同一实例 → 同一份状态）
+        org.alpha.sekiroBedwar.parry.ParryMarker parryMarker =
+                new org.alpha.sekiroBedwar.parry.ParryMarker();
+        this.parryMarker = parryMarker;
         this.parryManager = new ParryManager(this, parryConfig, stanceManager, duelManager,
                 stanceBreakManager, this.parrySealManager, this.lightningManager, this.dangerManager,
-                this.deflectManager, this.attributeManager, this.mysteryManager);
+                this.deflectManager, this.attributeManager, this.mysteryManager, parryMarker);
         this.parryManager.enable();
 
         // 决斗冻结系统（独立模块）：物资刷新冻结（白圈内刷新点暂停实际生成，计时照常，
@@ -311,6 +325,15 @@ public final class SekiroBedwar extends JavaPlugin {
         this.swordBlockingManager = new SwordBlockingManager(this);
         this.swordBlockingManager.enable();
 
+        // 踩头 / 重锤风暴（独立模块）：忍具商店购买 + 穿甲后，滞空贴身按空格——谁相对高度低谁被踩，
+        // 下落 ≤1.5 格只扣架势、>1.5 格产生风爆 + 1 基础伤害（走正常命中管线，可被完美弹反）；
+        // 未弹反踩者借力弹走、被完美弹反则位移反转成击退（可被打出白圈掉虚空）。
+        this.stompManager = new org.alpha.sekiroBedwar.stomp.StompManager(this,
+                new org.alpha.sekiroBedwar.stomp.StompConfig(this), this.stanceManager,
+                this.stanceBreakManager, this.duelManager, this.duelAreaGuard, this.mysteryManager,
+                this.sekiroShopManager, this.parryMarker);
+        this.stompManager.enable();
+
         getLogger().info("SekiroBedwar 已启用，决斗触发配置 radius=" + duelConfig.radius()
                 + " inner(y)=" + duelConfig.innerRadius() + " outer(z)=" + duelConfig.outerRadius()
                 + " pending=" + duelConfig.duelPendingSeconds() + "s");
@@ -333,6 +356,9 @@ public final class SekiroBedwar extends JavaPlugin {
         }
         if (this.swordBlockingManager != null) {
             this.swordBlockingManager.disable();
+        }
+        if (this.stompManager != null) {
+            this.stompManager.disable();
         }
         if (this.speedManager != null) {
             this.speedManager.disable();
@@ -378,6 +404,9 @@ public final class SekiroBedwar extends JavaPlugin {
         }
         if (this.beadManager != null) {
             this.beadManager.disable();
+        }
+        if (this.sugarManager != null) {
+            this.sugarManager.disable(); // 恢复 HP/架势上限 + 注销 provider（先于 stanceManager 关闭）
         }
         if (this.driftingPaperDollManager != null) {
             this.driftingPaperDollManager.disable();
@@ -518,6 +547,11 @@ public final class SekiroBedwar extends JavaPlugin {
     /** 获取佛珠管理器。 */
     public BeadManager getBeadManager() {
         return this.beadManager;
+    }
+
+    /** 获取夜叉戮糖管理器。 */
+    public SugarManager getSugarManager() {
+        return this.sugarManager;
     }
 
     /** 获取僵尸头颅 / 恐怖条管理器。 */

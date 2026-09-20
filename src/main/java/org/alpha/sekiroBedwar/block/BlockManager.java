@@ -126,7 +126,7 @@ public final class BlockManager {
         if (victim.isBlocking()) {
             if (dangerManager.isDangerAttack(event)) {
                 // 危格挡：破盾 + 防守方扣 15 架势（不可完美弹反，直接受破盾惩罚）。
-                dangerManager.applyShieldBreak(victim);
+                dangerManager.applyShieldBreak(attacker, victim);
                 org.alpha.sekiroBedwar.api.internal.SekiroApiImpl.shieldBreak(victim.getUniqueId(),
                         attacker.getUniqueId(), org.alpha.sekiroBedwar.api.events.ShieldBreakEvent.Cause.DANGER,
                         dangerManager.stancePenalty());
@@ -141,12 +141,12 @@ public final class BlockManager {
                     int ticks = Math.max(1, (int) Math.ceil(config.shieldBreakDisableBlockingSeconds() * 20.0));
                     victim.setCooldown(Material.SHIELD, ticks);
                     double loss = db * config.shieldBreakStanceMultiplier();
-                    stanceManager.reduceStance(victim.getUniqueId(), loss);
+                    stanceManager.reduceStanceBy(attacker.getUniqueId(), victim.getUniqueId(), loss);
                     org.alpha.sekiroBedwar.api.internal.SekiroApiImpl.shieldBreak(victim.getUniqueId(),
                             attacker.getUniqueId(), org.alpha.sekiroBedwar.api.events.ShieldBreakEvent.Cause.AXE, loss);
                 } else {
                     double loss = db * config.defenderMultiplier();
-                    stanceManager.reduceStance(victim.getUniqueId(), loss);
+                    stanceManager.reduceStanceBy(attacker.getUniqueId(), victim.getUniqueId(), loss);
                     org.alpha.sekiroBedwar.api.internal.SekiroApiImpl.block(victim.getUniqueId(),
                             attacker.getUniqueId(), attacker.getInventory().getItemInMainHand().getType(),
                             loss, projectile);
@@ -157,7 +157,7 @@ public final class BlockManager {
             double actual = event.getFinalDamage();
             if (actual > 0.0) {
                 double loss = actual * config.hitMultiplier();
-                stanceManager.reduceStance(victim.getUniqueId(), loss);
+                stanceManager.reduceStanceBy(attacker.getUniqueId(), victim.getUniqueId(), loss);
                 org.alpha.sekiroBedwar.api.internal.SekiroApiImpl.hitLanded(attacker.getUniqueId(),
                         victim.getUniqueId(), attacker.getInventory().getItemInMainHand().getType(),
                         loss, actual, CombatUtils.resolveMeleeAttacker(event) != null);

@@ -125,7 +125,17 @@ public final class PaperDollManager {
         return player.getUniqueId().toString().equals(owner);
     }
 
-    /** 抛投物发射：有纸人时消耗纸人并退还物品（1 纸人抵一次投掷）。 */
+    /**
+     * 抛投物发射：返还类抛掷物（风弹/火焰弹）只有背包只剩最后 1 个（投掷后剩 0）时才消耗
+     * 纸人并返还保底；多于 1 个时投掷正常消耗一个（不耗纸人、不返还）。其余投掷物（三叉戟等）
+     * 维持「有纸人则消耗 1 纸人抵一次投掷」。
+     *
+     * <p><b>⚠️ 必须延后一 tick 判定（2026-09-20 修）</b>：{@code ProjectileLaunchEvent} 在原版
+     * <b>扣除物品之前</b>派发——事件里读到的背包数量仍是「投掷前」的数量，所以手里只有 1 个时
+     * 会读到 1，被误判成「还有剩余」，结果既不耗纸人也不返还、物品却被原版扣走了。改为下一 tick
+     * 复查：{@code countMaterial == 0} 即「这就是最后一个」→ 才扣纸人 + 返还保底；{@code > 0}
+     * 即还有剩余 → 正常消耗、不耗纸人不返还。判定与结算同处一支，不会出现「扣了却不返还」。</p>
+     */
     public void handleProjectileLaunch(Player shooter, Projectile projectile) {
         if (!config.throwEnabled()) {
             return;
@@ -135,18 +145,53 @@ public final class PaperDollManager {
         if (mat != null && config.throwWhitelist().contains(mat)) {
             return;
         }
-        if (countPaperDolls(shooter) < config.throwCost()) {
+        Material refund = refundMaterial(projectile);
+        if (refund == null) {
+            // 非返还类抛掷物（三叉戟等）：有纸人则消耗 1 纸人抵一次投掷，无需等扣除
+            if (countPaperDolls(shooter) < config.throwCost()) {
+                return;
+            }
+            consumePaperDolls(shooter, config.throwCost());
+            org.alpha.sekiroBedwar.api.internal.SekiroApiImpl.toolUse(shooter.getUniqueId(),
+                    org.alpha.sekiroBedwar.api.ToolId.PAPER_DOLL, null,
+                    org.alpha.sekiroBedwar.api.ToolUseResult.SUCCESS);
             return;
+        }
+        // 返还类：延后一 tick，等原版扣完物品再判「是不是最后一个」
+        Bukkit.getScheduler().runTask(plugin, () -> settleRefundableThrow(shooter, refund));
+    }
+
+    /**
+     * 返还类抛掷物的结算（下一 tick，物品已被原版扣除）：
+     * 背包里该抛掷物已归零 = 刚丢掉的是最后一个 → 耗 {@code throw.cost} 纸人并返还保底一个；
+     * 仍有剩余 = 只是正常消耗一个 → 不耗纸人、不返还。
+     */
+    private void settleRefundableThrow(Player shooter, Material refund) {
+        if (shooter == null || !shooter.isOnline()) {
+            return;
+        }
+        if (countMaterial(shooter, refund) > 0) {
+            return; // 还有剩余：正常消耗
+        }
+        if (countPaperDolls(shooter) < config.throwCost()) {
+            return; // 纸人不足：不扣纸人、也不返还（与原口径一致：返还只在纸人抵扣成功时给）
         }
         consumePaperDolls(shooter, config.throwCost());
         org.alpha.sekiroBedwar.api.internal.SekiroApiImpl.toolUse(shooter.getUniqueId(),
                 org.alpha.sekiroBedwar.api.ToolId.PAPER_DOLL, null,
-                org.alpha.sekiroBedwar.api.ToolUseResult.SUCCESS); // 投掷抵扣（忍具资源使用）
-        Material refund = refundMaterial(projectile);
-        if (refund != null) {
-            ItemStack item = new ItemStack(refund);
-            Bukkit.getScheduler().runTask(plugin, () -> shooter.getInventory().addItem(item));
+                org.alpha.sekiroBedwar.api.ToolUseResult.SUCCESS);
+        shooter.getInventory().addItem(new ItemStack(refund)); // 返还保底（下一 tick 发，不会与原版扣除打架）
+    }
+
+    /** 背包中该材质物品总数（按 Material 计，忽略显示名）。 */
+    private int countMaterial(Player player, Material material) {
+        int count = 0;
+        for (ItemStack item : player.getInventory().getContents()) {
+            if (item != null && item.getType() == material) {
+                count += item.getAmount();
+            }
         }
+        return count;
     }
 
     private Material projectileMaterial(Projectile projectile) {

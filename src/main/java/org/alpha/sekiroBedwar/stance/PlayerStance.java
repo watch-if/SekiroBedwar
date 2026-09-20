@@ -16,6 +16,8 @@ package org.alpha.sekiroBedwar.stance;
 public final class PlayerStance {
     private volatile double current;
     private volatile double max;
+    /** 最大架势缩放（夜叉戮糖等临时减半上限的 buff；默认 1.0 = 不缩放）。 */
+    private volatile double maxScale = 1.0;
     private volatile long brokenUntil;
     private volatile long guardDisabledUntil;
     /** 最近一次“外部架势变化”时间戳（自然恢复不刷新它），用于 idle 触发判断。 */
@@ -49,8 +51,16 @@ public final class PlayerStance {
         return current;
     }
 
+    /** 最大架势 = 基础 max × 缩放（夜叉戮糖减半等临时 buff）。 */
     public double getMax() {
-        return max;
+        return max * maxScale;
+    }
+
+    /** 设置最大架势缩放并重新钳制当前架势（缩放变小会把 current 钳到新上限）。 */
+    public synchronized void setMaxScale(double scale) {
+        this.maxScale = scale > 0.0 ? scale : 1.0;
+        this.current = clamp(this.current);
+        touch();
     }
 
     /** 是否处于崩条状态（处决窗口开启）。 */
@@ -93,12 +103,13 @@ public final class PlayerStance {
 
     /** 当前架势 / 最大架势（0.0 ~ 1.0）。 */
     public double getPercentage() {
-        return max <= 0.0 ? 0.0 : Math.min(1.0, Math.max(0.0, current / max));
+        double m = getMax();
+        return m <= 0.0 ? 0.0 : Math.min(1.0, Math.max(0.0, current / m));
     }
 
     /** 是否满架势。 */
     public boolean isFull() {
-        return current >= max;
+        return current >= getMax();
     }
 
     /** 设置当前架势并钳制到 [0, max]。 */
@@ -181,6 +192,6 @@ public final class PlayerStance {
     }
 
     private double clamp(double value) {
-        return Math.min(max, Math.max(0.0, value));
+        return Math.min(getMax(), Math.max(0.0, value));
     }
 }

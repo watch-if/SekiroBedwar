@@ -159,7 +159,7 @@ public final class YamedoCrossSlash implements Mystery {
         dir.normalize().multiply(level * 0.45); // 近似原版附魔级别：水平速度 0.45/级
         dir.setY(level * 0.1);                  // 轻微上抬（原版 KB 垂直分量近似）
         victim.setVelocity(dir);
-        stanceManager.reduceStance(victim.getUniqueId(), config.yameVictimStancePenalty());
+        stanceManager.reduceStanceBy(attacker.getUniqueId(), victim.getUniqueId(), config.yameVictimStancePenalty());
         stanceManager.addStance(attacker.getUniqueId(), config.yameSelfStanceRecovery());
     }
 

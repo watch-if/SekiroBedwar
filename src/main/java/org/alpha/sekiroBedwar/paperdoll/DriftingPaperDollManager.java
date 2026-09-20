@@ -7,8 +7,6 @@ import org.alpha.sekiroBedwar.shop.ShopCurrency;
 import org.alpha.sekiroBedwar.shop.ShopItem;
 import org.bukkit.Material;
 import org.bukkit.NamespacedKey;
-import org.bukkit.attribute.Attribute;
-import org.bukkit.attribute.AttributeInstance;
 import org.bukkit.entity.Player;
 import org.bukkit.event.entity.PlayerDeathEvent;
 import org.bukkit.inventory.ItemStack;
@@ -20,7 +18,7 @@ import java.util.List;
 import java.util.UUID;
 
 /**
- * 漂流纸人管理器：消耗品，右键血量减半换 5 纸人（可超上限），效果死亡复位。
+ * 漂流纸人管理器：消耗品，右键扣除当前最大生命 50% 的血换 5 纸人（可超上限）。
  * 经忍具商店 GUI 购买。
  */
 public final class DriftingPaperDollManager {
@@ -118,7 +116,7 @@ public final class DriftingPaperDollManager {
 
     // ============ 右键使用 ============
 
-    /** 右键使用漂流纸人：血量 &gt; 50% 上限时消耗 1 个，血量上限砍半并发放纸人。 */
+    /** 右键使用漂流纸人：血量 &gt; 50% 上限时消耗 1 个，扣除当前最大生命 50% 的血并发放纸人。 */
     public void handleUse(Player player, ItemStack held) {
         if (!config.driftingEnabled() || player == null || held == null) {
             return;
@@ -136,28 +134,18 @@ public final class DriftingPaperDollManager {
         if (!consumeDrifting(player, 1)) {
             return;
         }
-        reduceMaxHealth(player);
+        reduceHealth(player);
         paperDollManager.givePaperDolls(player, config.driftingPaperDollsGranted());
         org.alpha.sekiroBedwar.api.internal.SekiroApiImpl.toolUse(player.getUniqueId(),
                 org.alpha.sekiroBedwar.api.ToolId.DRIFTING_PAPER_DOLL, null,
                 org.alpha.sekiroBedwar.api.ToolUseResult.SUCCESS);
     }
 
-    private void reduceMaxHealth(Player player) {
-        Attribute attr = maxHealthAttribute();
-        if (attr == null) {
-            return;
-        }
-        AttributeInstance inst = player.getAttribute(attr);
-        if (inst == null) {
-            return;
-        }
-        double currentMax = inst.getBaseValue();
-        double newMax = currentMax * config.driftingHpReduction();
-        inst.setBaseValue(newMax);
-        if (player.getHealth() > newMax) {
-            player.setHealth(newMax);
-        }
+    /** 扣除当前最大生命值 {@code hp-reduction} 比例的血量（不扣上限）。 */
+    private void reduceHealth(Player player) {
+        double max = player.getMaxHealth();
+        double cost = max * config.driftingHpReduction();
+        player.setHealth(Math.max(0.0, player.getHealth() - cost));
     }
 
     // ============ 死亡清理 ============
@@ -190,7 +178,7 @@ public final class DriftingPaperDollManager {
     /** 动态渲染：用法 + 价格 + 持有数。 */
     private ItemStack renderItem(Player viewer) {
         List<String> lore = new ArrayList<>();
-        lore.add("§7血量>50%时右键：上限减半，得 " + config.driftingPaperDollsGranted() + " 纸人");
+        lore.add("§7血量>50%时右键：扣当前最大生命50%的血，得 " + config.driftingPaperDollsGranted() + " 纸人");
         lore.add(ShopCurrency.priceLore(config.driftingPriceCurrency(), config.driftingPriceAmount()));
         if (viewer != null) {
             int held = countDrifting(viewer);
@@ -200,17 +188,5 @@ public final class DriftingPaperDollManager {
             }
         }
         return SekiroShopManager.icon(config.driftingMaterial(), "§f" + config.driftingName(), lore);
-    }
-
-    @SuppressWarnings("removal")
-    private static Attribute maxHealthAttribute() {
-        for (String name : new String[]{"MAX_HEALTH", "GENERIC_MAX_HEALTH"}) {
-            try {
-                return Attribute.valueOf(name);
-            } catch (IllegalArgumentException ignored) {
-                // 该名字在当前 API 中不存在，尝试下一个
-            }
-        }
-        return null;
     }
 }

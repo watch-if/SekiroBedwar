@@ -276,8 +276,8 @@ public final class LightningManager {
         // 恢复 HP
         double max = attacker.getMaxHealth();
         attacker.setHealth(Math.min(max, attacker.getHealth() + heal));
-        // 返还对方架势伤害
-        stanceManager.reduceStance(strike.striker, strike.damage * retMult);
+        // 返还对方架势伤害（造成方 = 雷反者 id，走倍率入口）
+        stanceManager.reduceStanceBy(id, strike.striker, strike.damage * retMult);
         org.alpha.sekiroBedwar.api.internal.SekiroApiImpl.toolUse(id,
                 org.alpha.sekiroBedwar.api.ToolId.LIGHTNING_REVERSAL, strike.striker,
                 org.alpha.sekiroBedwar.api.ToolUseResult.SUCCESS);
@@ -301,7 +301,7 @@ public final class LightningManager {
                 continue;
             }
             victim.damage(strike.damage);
-            stanceManager.reduceStance(entry.getKey(), strike.stanceDeducted);
+            stanceManager.reduceStanceBy(strike.striker, entry.getKey(), strike.stanceDeducted);
             stanceManager.markActive(entry.getKey());
         }
     }

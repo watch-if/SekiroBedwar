@@ -203,6 +203,20 @@ public final class MysteryManager implements Listener {
         }
     }
 
+    /**
+     * 取消某玩家的防击退护身（{@link KnockbackGuard}）。
+     *
+     * <p>供自行施加位移的模块调用：踩头/重锤风暴的借力弹走与被弹反击退都必须是
+     * <b>真实的位移</b>，若玩家身上还有第三击起的 1s 防击退护身，位移会被 MONITOR
+     * 回写抵消，风险设计（被弹反可能被打出白圈掉虚空）就失效。踩头不推进秘传，
+     * 因此在此直接断掉护身。</p>
+     */
+    public void cancelKnockbackGuard(UUID uuid) {
+        if (uuid != null) {
+            guard.clear(uuid);
+        }
+    }
+
     /** 左键挥臂转发（龙闪释放；不取消原版攻击动作）。 */
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onLeftClick(org.bukkit.event.player.PlayerAnimationEvent event) {

@@ -129,7 +129,7 @@ public final class IsshinSevenStrike implements Mystery {
                 valid++;
                 double bonus = config.isshinBonusPerStageStance() * valid;
                 if (bonus > 0) {
-                    stanceManager.reduceStance(victim.getUniqueId(), bonus);
+                    stanceManager.reduceStanceBy(attacker.getUniqueId(), victim.getUniqueId(), bonus);
                 }
             }
             complete(attacker);
@@ -161,7 +161,7 @@ public final class IsshinSevenStrike implements Mystery {
         p.validStages++;
         double bonus = config.isshinBonusPerStageStance() * p.validStages;
         if (bonus > 0) {
-            stanceManager.reduceStance(victim.getUniqueId(), bonus);
+            stanceManager.reduceStanceBy(attacker.getUniqueId(), victim.getUniqueId(), bonus);
         }
     }
 

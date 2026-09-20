@@ -245,7 +245,7 @@ public final class LongShan implements Mystery {
                     target.damage(config.lsDamageHp()); // 泛型直伤：不走格挡/弹反二次处理
                 }
                 if (config.lsDamageStance() > 0) {
-                    stanceManager.reduceStance(id, config.lsDamageStance());
+                    stanceManager.reduceStanceBy(wave.caster, id, config.lsDamageStance());
                 }
                 hitsByCaster.merge(wave.caster, 1, Integer::sum);
                 org.alpha.sekiroBedwar.api.internal.SekiroApiImpl.techHit(wave.caster,

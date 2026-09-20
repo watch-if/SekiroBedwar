@@ -112,7 +112,7 @@ public final class FeiduFuzhou implements Mystery {
 
         if (p.hits == totalHits - 1 && !parried) {
             // 第 6 击：有效命中（未被完美弹反）额外追加架势伤害
-            stanceManager.reduceStance(victim.getUniqueId(), config.fdfzSixthBonusStance());
+            stanceManager.reduceStanceBy(attacker.getUniqueId(), victim.getUniqueId(), config.fdfzSixthBonusStance());
         }
         if (p.hits == totalHits) {
             progress.remove(uuid);

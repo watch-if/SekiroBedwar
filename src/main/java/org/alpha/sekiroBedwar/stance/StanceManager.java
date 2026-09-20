@@ -43,6 +43,12 @@ public final class StanceManager {
      */
     private volatile StanceObserver observer;
 
+    /** 架势伤害倍率提供者（夜叉戮糖等 buff 按造成方返回倍率，默认 1.0）。 */
+    private volatile java.util.function.ToDoubleFunction<UUID> stanceDamageMultiplierProvider;
+
+    /** 架势上限缩放提供者（夜叉戮糖减半等；进入决斗初始化时按此应用）。 */
+    private volatile java.util.function.ToDoubleFunction<UUID> maxStanceScaleProvider;
+
     public StanceManager(SekiroBedwar plugin, StanceConfig config) {
         this.plugin = plugin;
         this.config = config;
@@ -51,6 +57,36 @@ public final class StanceManager {
     /** 安装 / 卸载公共 API 观察者（主线程，装配期一次性设置）。 */
     public void setObserver(StanceObserver observer) {
         this.observer = observer;
+    }
+
+    /** 安装 / 卸载架势伤害倍率提供者（夜叉戮糖等；装配期设置，禁用时置 null）。 */
+    public void setStanceDamageMultiplierProvider(java.util.function.ToDoubleFunction<UUID> provider) {
+        this.stanceDamageMultiplierProvider = provider;
+    }
+
+    /** 安装 / 卸载架势上限缩放提供者（进入决斗初始化最大架势时应用）。 */
+    public void setMaxStanceScaleProvider(java.util.function.ToDoubleFunction<UUID> provider) {
+        this.maxStanceScaleProvider = provider;
+    }
+
+    /** 造成方当前架势伤害倍率（无提供者或非正值 → 1.0）。 */
+    public double stanceDamageMultiplierOf(UUID dealer) {
+        java.util.function.ToDoubleFunction<UUID> p = stanceDamageMultiplierProvider;
+        if (p == null || dealer == null) {
+            return 1.0;
+        }
+        double m = p.applyAsDouble(dealer);
+        return m > 0.0 ? m : 1.0;
+    }
+
+    /** 目标当前最大架势缩放（无提供者或非正值 → 1.0）。 */
+    public double maxStanceScaleOf(UUID uuid) {
+        java.util.function.ToDoubleFunction<UUID> p = maxStanceScaleProvider;
+        if (p == null || uuid == null) {
+            return 1.0;
+        }
+        double s = p.applyAsDouble(uuid);
+        return s > 0.0 ? s : 1.0;
     }
 
     /** 玩家是否持有架势状态（= 处于决斗中，只读）。 */
@@ -102,6 +138,10 @@ public final class StanceManager {
     private void initPlayer(Player player) {
         double max = computeMaxStance(player);
         PlayerStance stance = new PlayerStance(max);
+        double scale = maxStanceScaleOf(player.getUniqueId()); // 夜叉戮糖等进入决斗即生效的临时上限缩放
+        if (scale != 1.0) {
+            stance.setMaxScale(scale);
+        }
         stances.put(player.getUniqueId(), stance);
     }
 
@@ -141,6 +181,15 @@ public final class StanceManager {
             stance.reduce(Math.max(0.0, amount));
             notifyChange(uuid, before, stance.getCurrent());
         }
+    }
+
+    /**
+     * 由造成方（dealer）对目标造成架势伤害：先按造成方当前的架势伤害倍率（夜叉戮糖等
+     * buff，默认 1.0）放大，再扣减目标架势。供「攻击 / 弹开 / 识破 / 属性 / 秘传 / 巴之雷」
+     * 等一切有明确造成方的架势伤害统一走此入口，倍率集中在此应用。
+     */
+    public void reduceStanceBy(UUID dealer, UUID victim, double amount) {
+        reduceStance(victim, amount * stanceDamageMultiplierOf(dealer));
     }
 
     /**
@@ -202,17 +251,29 @@ public final class StanceManager {
      * （临界中未弹反命中 / 被对方弹反才崩）。</p>
      */
     public boolean isCritical(UUID uuid) {
-        PlayerStance stance = stances.get(uuid);
-        if (stance == null) {
-            return false;
-        }
-        return !stance.isBroken() && stance.getPercentage() <= (1.0 - config.breakCriticalRatio()) + 1e-6;
+        return isCriticalStance(uuid);
     }
 
     /** 是否处于崩条状态（处决窗口）。 */
     public boolean isBroken(UUID uuid) {
         PlayerStance stance = stances.get(uuid);
         return stance != null && stance.isBroken();
+    }
+
+    /**
+     * 是否处于<b>临界且尚未崩条</b>——即「架势条已空、但还没被判崩」的那一段。
+     *
+     * <p>与 {@link #isCritical} 的区别：{@code isCritical} 已排除崩条态，但语义是「可触发崩条的
+     * 前置条件」；本方法把「架势见底」这件事单独表达出来，供需要区分
+     * <b>临界 vs 已崩</b>的模块使用（弓的临界特殊用法：只有「架势见底」享减罚，
+     * 已经崩条、处在处决窗口时不享）。</p>
+     */
+    public boolean isCriticalStance(UUID uuid) {
+        PlayerStance stance = stances.get(uuid);
+        if (stance == null) {
+            return false;
+        }
+        return !stance.isBroken() && stance.getPercentage() <= (1.0 - config.breakCriticalRatio()) + 1e-6;
     }
 
     /** 处决窗口是否已到期（曾崩条且当前时刻已越过截止时间），供结算模块判断半额结算。 */
@@ -379,6 +440,15 @@ public final class StanceManager {
             return;
         }
         stance.setMax(computeMaxStance(player));
+    }
+
+    /** 设置目标的最大架势缩放（夜叉戮糖减半 / 结束复原）；不在决斗中无操作。 */
+    public void setMaxScale(UUID uuid, double scale) {
+        ensureMainThread("setMaxScale");
+        PlayerStance stance = stances.get(uuid);
+        if (stance != null) {
+            stance.setMaxScale(scale);
+        }
     }
 
     /**

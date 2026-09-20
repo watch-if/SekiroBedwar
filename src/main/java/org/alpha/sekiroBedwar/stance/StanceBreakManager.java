@@ -20,14 +20,19 @@ import java.util.UUID;
  * （默认 1.0 = 架势条空 / current≈0），且未处于崩条状态。到达临界<b>不会自动崩条</b>，
  * 只有满足下列任一触发条件才崩（全部开关配置化，{@code stance.break.trigger.*}）：</p>
  * <ul>
- *   <li><b>条件一（未弹反命中）</b>：临界玩家被对方的<b>近战</b>命中且未成功完美弹反
- *       （普通格挡或无格挡）→ 崩条。由 {@link org.alpha.sekiroBedwar.block.BlockManager} 在
+ *   <li><b>条件一（未弹反命中）</b>：临界玩家被对方的命中且未成功完美弹反
+ *       （普通格挡或无格挡）→ 崩条——<b>近战与远程一视同仁</b>（用户 2026-09-20 拍板：
+ *       弓箭虽然正常情况下打不出完美弹反，但「未被弹反的命中」同样崩条）。
+ *       由 {@link org.alpha.sekiroBedwar.block.BlockManager} 在
  *       扣架势<b>之前</b>调用 {@link #onIncomingHit}（保证读到命中前的临界状态）。</li>
  *   <li><b>条件二（被弹反）</b>：临界玩家自己的<b>近战</b>攻击被对方完美弹反 → 崩条。
  *       由 {@link org.alpha.sekiroBedwar.parry.ParryManager} 完美弹反成功分支调用 {@link #onAttackParried}。</li>
- *   <li><b>远程命中不崩</b>：弓箭 / 投射物命中临界玩家不触发崩条，只让对方持续维持临界状态
- *       （BlockManager 已对双方 markActive 刷新 idle 计时，阻止自然下降）。</li>
  * </ul>
+ *
+ * <p><b>远程口径（2026-09-20 改）</b>：弓箭 / 投射物命中临界玩家<b>照常崩条</b>——旧口径
+ * 「远程不崩只维持临界」已废除。弓在临界对决里是压制手段：临界一方用弓持续射击，
+ * 对方举盾也只能吃普通格挡的架势扣减并最终崩条（远程不可弹反，这也是
+ * {@code ParryManager} 给弓开「被完美弹反」分支的原因）。</p>
  *
  * <p><b>崩条后果</b>（{@link StanceManager#breakStance}）：当前架势清零 + 进入结算 / 逃离窗口
  * （{@code execution-seconds}）+ <b>受击状态</b>（{@code stagger.duration-seconds}，
@@ -38,7 +43,7 @@ import java.util.UUID;
  *
  * <p><b>低血量拉临界</b>（{@code stance.break.low-health-threshold}，默认 2）：决斗中每次受击后，
  * 血量 ≤ 阈值且未死亡 → 架势强制拉到临界（幂等反复生效），不是崩条——低血量玩家持续处于临界，
- * 下一次未弹反的近战命中即崩条。</p>
+ * 下一次未弹反的命中即崩条。</p>
  *
  * <p><b>自然回血阻断</b>（{@code stance.health-regen.block-natural}，默认 true）：架势非满
  * （current &lt; max）时取消 SATIATED（饥饿值自然回血）；金苹果 / 药水等主动治疗不受影响。
@@ -85,15 +90,56 @@ public final class StanceBreakManager {
      * 扣架势之前调用，保证读到命中前的临界状态）。
      *
      * <ol>
-     *   <li><b>崩条条件一</b>：命中为<b>近战</b>且受击方处于临界 → 按格挡 / 无格挡开关崩条；
-     *       远程命中不崩，只维持临界。</li>
+     *   <li><b>崩条条件一</b>：命中来自玩家（近战直接命中<b>或</b>投射物射击者）且受击方处于临界
+     *       → 按格挡 / 无格挡开关崩条。远程与近战同口径（2026-09-20 改）。</li>
      *   <li><b>低血量拉临界</b>：受击后血量 ≤ 阈值且未死亡 → 架势拉到临界（幂等，不崩条）。</li>
      * </ol>
      */
     public void onIncomingHit(Player victim, EntityDamageByEntityEvent event) {
-        Player attacker = CombatUtils.resolveMeleeAttacker(event);
-        boolean melee = attacker != null;
-        if (melee && stanceManager.isCritical(victim.getUniqueId())) {
+        // 攻击方 = 近战直接命中 或 投射物射击者：崩条对远/近一视同仁（用户 2026-09-20 拍板
+        //「远程命中、只要没有被完美弹反，也能崩条」）。此前只认近战，导致临界玩家被箭矢
+        // 命中只维持临界、不崩，与被压制方应有的压力不符。
+        Player attacker = CombatUtils.resolveAttacker(event);
+        boolean playerSource = attacker != null;
+        if (playerSource && stanceManager.isCritical(victim.getUniqueId())) {
+            if (victim.isBlocking() && config.breakOnBlockedHit()) {
+                breakStance(victim);
+                notifyBreak(attacker, victim);
+                org.alpha.sekiroBedwar.api.internal.SekiroApiImpl.stanceBreak(
+                        victim.getUniqueId(), attacker.getUniqueId());
+            } else if (!victim.isBlocking() && config.breakOnUnblockedHit()) {
+                breakStance(victim);
+                notifyBreak(attacker, victim);
+                org.alpha.sekiroBedwar.api.internal.SekiroApiImpl.stanceBreak(
+                        victim.getUniqueId(), attacker.getUniqueId());
+            }
+        }
+        double postHit = victim.getHealth() - event.getFinalDamage();
+        if (postHit > 0.0 && postHit <= config.lowHealthThreshold()) {
+            stanceManager.setStance(victim.getUniqueId(), 0.0);
+        }
+    }
+
+    /**
+     * 处理一次<b>不派发伤害事件</b>的近战命中（供自行施加架势伤害的模块调用，如踩头的轻踩）。
+     *
+     * <p>常规命中由 {@code BlockManager.handleDamage} 调 {@link #onIncomingHit}，而轻踩只扣
+     * 固定架势、没有 {@code EntityDamageByEntityEvent}——若不显式走这里，就会出现
+     * 「临界中被踩头却不崩条」（用户 2026-09-20 反馈）。判定口径与普通近战命中完全一致：
+     * 近战 → 按格挡 / 无格挡开关崩条；随后若血量偏低 → 拉临界。</p>
+     *
+     * <p>判定必须在扣架势<b>之前</b>调用，保证读到的是命中前的临界状态
+     * （踩头先扣 1 架势会把临界打成 0，之后再判就不是临界了）。</p>
+     *
+     * @param attacker   命中方（可为空，仅用于公共事件对手信息）
+     * @param victim     受击方
+     * @param postDamage 本次命中后的血量（用于低血量拉临界；轻踩无伤害可传当前血量）
+     */
+    public void onMeleeHitWithoutEvent(Player attacker, Player victim, double postDamage) {
+        if (victim == null) {
+            return;
+        }
+        if (stanceManager.isCritical(victim.getUniqueId())) {
             if (victim.isBlocking() && config.breakOnBlockedHit()) {
                 breakStance(victim);
                 notifyBreak(attacker, victim);
@@ -106,8 +152,7 @@ public final class StanceBreakManager {
                         victim.getUniqueId(), attacker == null ? null : attacker.getUniqueId());
             }
         }
-        double postHit = victim.getHealth() - event.getFinalDamage();
-        if (postHit > 0.0 && postHit <= config.lowHealthThreshold()) {
+        if (postDamage > 0.0 && postDamage <= config.lowHealthThreshold()) {
             stanceManager.setStance(victim.getUniqueId(), 0.0);
         }
     }
