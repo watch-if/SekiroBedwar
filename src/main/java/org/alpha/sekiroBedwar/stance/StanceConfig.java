@@ -49,6 +49,11 @@ public final class StanceConfig {
     private boolean breakOnParriedAttack;
     private boolean blockNaturalRegen;
 
+    // 处决窗口破甲（崩条后被处决者护甲无效：命中按纯血伤结算）
+    private boolean executionArmorEnabled;
+    private boolean executionArmorStripEnchant;
+    private boolean executionArmorLog;
+
     private boolean naturalRecoveryEnabled;
     private double naturalRecoveryRate;
     private double naturalRecoveryIdleSeconds;
@@ -91,6 +96,10 @@ public final class StanceConfig {
         this.breakOnUnblockedHit = yaml.getBoolean("stance.break.trigger.break-on-unblocked-hit", true);
         this.breakOnParriedAttack = yaml.getBoolean("stance.break.trigger.break-on-parried-attack", true);
         this.blockNaturalRegen = yaml.getBoolean("stance.health-regen.block-natural", true);
+
+        this.executionArmorEnabled = yaml.getBoolean("stance.break.execution-armor.enabled", true);
+        this.executionArmorStripEnchant = yaml.getBoolean("stance.break.execution-armor.strip-enchant", true);
+        this.executionArmorLog = yaml.getBoolean("stance.break.execution-armor.log", false);
 
         this.naturalRecoveryEnabled = yaml.getBoolean("stance.natural-recovery.enabled", true);
         this.naturalRecoveryRate = Math.max(0.0, yaml.getDouble("stance.natural-recovery.rate", 0.16));
@@ -223,6 +232,21 @@ public final class StanceConfig {
     /** 是否在架势非满（current < max）时阻断自然回血（仅 SATIATED）。 */
     public boolean blockNaturalRegen() {
         return blockNaturalRegen;
+    }
+
+    /** 处决窗口破甲：崩条（处决窗口开启）期间被处决者的护甲无效（默认 true）。 */
+    public boolean executionArmorEnabled() {
+        return executionArmorEnabled;
+    }
+
+    /** 处决破甲是否连同保护类附魔的减伤一起归零（默认 true = 纯血伤）。 */
+    public boolean executionArmorStripEnchant() {
+        return executionArmorStripEnchant;
+    }
+
+    /** 处决破甲是否打印诊断日志（控制台；默认 false）。 */
+    public boolean executionArmorLog() {
+        return executionArmorLog;
     }
 
     /** 是否启用架势自然恢复。 */

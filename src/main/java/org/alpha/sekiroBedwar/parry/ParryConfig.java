@@ -56,6 +56,7 @@ public final class ParryConfig {
 
     private double parryAttackerMultiplier;
     private double parryVictimCost;
+    private boolean noParryWhileBroken;
 
     private boolean parrySoundEnabled;
     private Sound parrySound;
@@ -91,6 +92,7 @@ public final class ParryConfig {
 
         this.parryAttackerMultiplier = Math.max(0.0, yaml.getDouble("parry.stance.parry-attacker-multiplier", 3.0));
         this.parryVictimCost = Math.max(0.0, yaml.getDouble("parry.stance.parry-victim-cost", 5.0));
+        this.noParryWhileBroken = yaml.getBoolean("parry.no-parry-while-broken", true);
 
         this.parrySoundEnabled = yaml.getBoolean("parry.feedback.sound.enabled", true);
         this.parrySound = resolveSound(yaml.getString("parry.feedback.sound.name"));
@@ -146,6 +148,11 @@ public final class ParryConfig {
     /** 完美弹反：受击方（弹反者）架势 −= 该<b>固定值</b>（不是乘数；默认 5.0）。 */
     public double parryVictimCost() {
         return parryVictimCost;
+    }
+
+    /** 处决窗口（崩条）期间是否禁止被处决者完美弹反（含纸人盾牌弹反窗口；默认 true）。 */
+    public boolean noParryWhileBroken() {
+        return noParryWhileBroken;
     }
 
     /** 完美弹反成功时是否向双方播放反馈音效。 */

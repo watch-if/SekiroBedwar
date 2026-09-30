@@ -44,6 +44,7 @@ import java.util.concurrent.ConcurrentHashMap;
 public final class MysteryManager implements Listener {
 
     private final SekiroBedwar plugin;
+    private final MysteryConfig config;
     private final List<Mystery> arts = new ArrayList<>();
     /** 防击退护身（飞渡浮舟 / 一心七连共用）。 */
     private final KnockbackGuard guard;
@@ -58,6 +59,7 @@ public final class MysteryManager implements Listener {
                           org.alpha.sekiroBedwar.duel.DuelManager duelManager,
                           org.alpha.sekiroBedwar.duel.DuelConfig duelConfig) {
         this.plugin = plugin;
+        this.config = config;
         this.guard = new KnockbackGuard(config);
         java.util.function.IntSupplier tick = () -> tickClock;
         java.util.function.BiFunction<Mystery, UUID, Integer> rivalTop = this::topProgress;
@@ -175,6 +177,8 @@ public final class MysteryManager implements Listener {
         tickTask = plugin.getServer().getScheduler()
                 .runTaskTimer(plugin, () -> tickClock++, 1L, 1L);
         PlayerLeaveEvent.handle(plugin, ev -> clearPlayer(ev.getPlayer().getUuid(), TechniqueCancelReason.LEFT));
+        // 取证日志器（TechniqueDebugLogger）改由 SekiroBedwar.onEnable【最末】注册——
+        // 它的取消段探针必须在每个优先级内排在所有取消者之后，归因才准确（见该类注释）。
         if (!arts.isEmpty()) {
             plugin.getServer().getPluginManager().registerEvents(guard, plugin);
         }

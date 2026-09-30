@@ -85,6 +85,9 @@ public final class MysteryConfig {
     // ---- 第三击起的防击退护身（飞渡浮舟 / 一心七连） ----
     private double knockbackGuardSeconds;
 
+    // ---- 取证日志（默认关；开启后把插件自发的秘传事件打到 console） ----
+    private boolean debugLog;
+
     public MysteryConfig(SekiroBedwar plugin) {
         this.plugin = plugin;
         reload();
@@ -150,6 +153,7 @@ public final class MysteryConfig {
 
         this.armConnectTicks = Math.max(0.0, yaml.getDouble("mystery.arm-connect-ticks", 4.0));
         this.knockbackGuardSeconds = Math.max(0.0, yaml.getDouble("mystery.knockback-guard-seconds", 1.0));
+        this.debugLog = yaml.getBoolean("mystery.debug-log", false);
     }
 
     private org.bukkit.Particle parseParticle(String name) {
@@ -351,6 +355,15 @@ public final class MysteryConfig {
     /** 第三击起每次成功命中刷新的防击退时长（秒；0 = 关闭）。 */
     public double knockbackGuardSeconds() {
         return knockbackGuardSeconds;
+    }
+
+    /**
+     * 取证日志开关（{@code mystery.debug-log}，默认 false）：开启后把插件<b>自发</b>的秘传事件
+     * （Start / Hit / Complete / Fail / Cancel）打到 console，用于对照 bot 自评「我完成了飞渡」
+     * 与插件实际判定（是否真 Complete、还是中途 OUT_OF_RHYTHM 脱拍）。默认关，零输出零开销。
+     */
+    public boolean debugLog() {
+        return debugLog;
     }
 
     // ---- 一心七连 ----

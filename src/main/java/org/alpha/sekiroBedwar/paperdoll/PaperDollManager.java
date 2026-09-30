@@ -257,7 +257,7 @@ public final class PaperDollManager {
         }
         markedTargets.remove(attacker.getUniqueId());
         consumePaperDolls(attacker, config.teleportCost());
-        attacker.teleport(findSafeLocation(victim));
+        teleportNextTick(attacker, victim.getUniqueId());
         org.alpha.sekiroBedwar.api.internal.SekiroApiImpl.toolUse(attacker.getUniqueId(),
                 org.alpha.sekiroBedwar.api.ToolId.PAPER_DOLL, victim.getUniqueId(),
                 org.alpha.sekiroBedwar.api.ToolUseResult.SUCCESS); // 命中后传送（近战追加路径）
@@ -281,31 +281,63 @@ public final class PaperDollManager {
         }
         markedTargets.remove(attacker.getUniqueId());
         consumePaperDolls(attacker, config.teleportCost());
-        Player target = Bukkit.getPlayer(mark.target);
-        if (target != null && target.isOnline()) {
-            attacker.teleport(findSafeLocation(target));
-        }
+        teleportNextTick(attacker, mark.target);
         org.alpha.sekiroBedwar.api.internal.SekiroApiImpl.toolUse(attacker.getUniqueId(),
                 org.alpha.sekiroBedwar.api.ToolId.PAPER_DOLL, mark.target,
                 org.alpha.sekiroBedwar.api.ToolUseResult.SUCCESS); // 命中后传送（左键路径）
     }
 
+    /**
+     * <b>延后 1 tick 传送</b>（关键：不要在事件回调里同步传送玩家）。
+     *
+     * <p>同步传送会让位置包与客户端正在处理的包（挥臂 / 伤害）撞在同一 tick，客户端与服务端坐标
+     * 短时不一致——表现 =「传送后 1~2 秒内攻击<b>完全没反应</b>」（攻击包被服务端按位置不符丢弃，
+     * 连受伤动画都没有），双方互相都打不出伤害。与 {@code shop/} 的「开窗前换窗有客户端 desync 坑
+     * → 下一 tick 打开」同一类坑。位置在下一 tick 现算，目标期间离线 / 阵亡 / 换世界则放弃传送
+     * （纸人已扣，不退还——与「命中窗口过期」同口径）。</p>
+     */
+    private void teleportNextTick(Player mover, java.util.UUID targetId) {
+        Bukkit.getScheduler().runTask(plugin, () -> {
+            if (mover == null || !mover.isOnline() || mover.isDead()) {
+                return;
+            }
+            Player target = Bukkit.getPlayer(targetId);
+            if (target == null || !target.isOnline() || target.isDead()) {
+                return;
+            }
+            mover.teleport(findSafeLocation(target));
+        });
+    }
+
+    /**
+     * 落点：优先目标<b>旁边</b>的实心地面（不与目标重叠、不悬空），全部不可行时退回目标脚下 / 头顶。
+     *
+     * <p>2026-09-27 调整：旧版第一个候选就是目标脚下（{@code base}），实战里几乎总是把传送者塞进
+     * 目标身体里——两人重叠既怪异、也让「传送后攻击」更容易出问题；改为先试四周一格。</p>
+     */
     private Location findSafeLocation(Player target) {
         Location base = target.getLocation();
         Location[] candidates = {
-                base.clone(),
-                base.clone().add(0, 1, 0),
-                base.clone().add(1, 0, 0),
-                base.clone().add(-1, 0, 0),
-                base.clone().add(0, 0, 1),
-                base.clone().add(0, 0, -1),
+                base.clone().add(0, 0, 1), base.clone().add(0, 0, -1),
+                base.clone().add(1, 0, 0), base.clone().add(-1, 0, 0),
+                base.clone().add(1, 0, 1), base.clone().add(-1, 0, -1),
+                base.clone().add(1, 0, -1), base.clone().add(-1, 0, 1),
+                base.clone(),               // 兜底：目标脚下（两人重叠）
+                base.clone().add(0, 1, 0),  // 兜底：目标头顶
         };
         for (Location c : candidates) {
-            if (c.getBlock().isPassable() && c.clone().add(0, 1, 0).getBlock().isPassable()) {
+            if (isStandable(c)) {
                 return c.clone().add(0.5, 0, 0.5);
             }
         }
         return base.clone().add(0, 1, 0);
+    }
+
+    /** 可站立判定：脚位与头顶两格可通行，且脚下一格为实心（不悬空）。 */
+    private static boolean isStandable(Location loc) {
+        return loc.getBlock().isPassable()
+                && loc.clone().add(0, 1, 0).getBlock().isPassable()
+                && !loc.clone().add(0, -1, 0).getBlock().isPassable();
     }
 
     // ============ 忍具商店 GUI ============

@@ -33,8 +33,12 @@ import java.util.Optional;
  *       不会被误判为完美弹反。</li>
  * </ul></p>
  *
- * <p><b>优先级分工</b>：本管理器在 <b>HIGH</b> 优先级监听（先于普通格挡模块 NORMAL），
- * 取消完美弹反的命中；其余命中由普通格挡模块处理，二者天然互斥不重复。</p>
+ * <p><b>优先级分工</b>：本管理器在 <b>LOW</b> 优先级监听，<b>先于</b>普通格挡模块（NORMAL）——
+ * Bukkit 执行序为 {@code LOWEST → LOW → NORMAL → HIGH → HIGHEST → MONITOR}，LOW 在 NORMAL 之前。
+ * 因此弹开 / 被封印的命中在 {@code setCancelled(true)} 后根本不会进入格挡模块
+ * （其 {@code ignoreCancelled=true}），不会再被按普通格挡扣掉弹反者自己的架势
+ * （2026-09-27 修：旧实现用 HIGH，误以为先于 NORMAL，实际晚于 NORMAL，导致每次弹反
+ * 弹反者先白扣一笔 {@code Dbase × defender-multiplier}）。</p>
  *
  * <p><b>连续 / 快速攻击</b>：弹反成功后调用 {@link ParryWindowManager#consumeBlockStart}
  * 消耗本次“格挡开始”记录——一次按下只弹反一击，同一按住中的后续命中按普通格挡处理，
@@ -63,6 +67,13 @@ import java.util.Optional;
  * <p><b>纸人盾牌弹反（{@code deflect/}）</b>：主手举盾消耗纸人后 {@code deflect-window-ms}（默认 2s）
  * 内为强制完美弹反窗口——窗口内每一记命中（近战<b>或箭矢</b>）都直接走本管理器的完美弹反分支
  * （免 170ms 窗口与「一次按住只弹反一击」限制，且不消耗格挡记录）；危攻击仍不可弹反。</p>
+ *
+ * <p><b>处决窗口不可弹反</b>（{@code parry.no-parry-while-broken}，默认 true，2026-09-27 追加）：
+ * 崩条（处决窗口开启）期间被处决者门户大开——其举盾弹反<b>与纸人盾牌弹反窗口一律不生效</b>
+ * （判定挂在本管理器最前面，早于近战/投射物分流与 {@code forced} 计算），命中直接落给
+ * {@code block/} 按普通格挡 / 无格挡处理。配合 {@code stance.break.execution-armor} 的破甲，
+ * 处决窗口内挨打就是纯血伤；被处决方唯一的活路是趁窗口逃离。判定对象是<b>弹反者（受击方）</b>：
+ * 崩条方自己出手时，若攻击被对方（处决者）完美弹反，仍照常结算——对方没有崩条，弹反有效。</p>
  */
 public final class ParryManager {
     private final SekiroBedwar plugin;
@@ -119,7 +130,7 @@ public final class ParryManager {
     }
 
     /**
-     * 处理一次决斗内近战命中（由 {@link ParryListener} 在 <b>HIGH</b> 优先级调用）。
+     * 处理一次决斗内近战命中（由 {@link ParryListener} 在 <b>LOW</b> 优先级调用）。
      * {@code parry.enabled=false} 时不做任何改动（完全原版战斗）。
      *
      * <p>只有命中完美弹反窗口才在此分支处理（取消 + 架势换算 + 消耗格挡记录）；
@@ -160,6 +171,14 @@ public final class ParryManager {
         // 危攻击（矛 + 突进附魔 + 疾跑）不可被完美弹反：打断连续被弹反计数，直接交 block 模块处理。
         if (dangerManager.isDangerAttack(event)) {
             sealManager.onHitLanded(attacker);
+            return;
+        }
+        // 处决窗口：崩条（处决窗口开启）期间被处决者【门户大开】——不可完美弹反，含纸人盾牌弹反的
+        // 强制窗口（parry.no-parry-while-broken，默认 true）。命中直接落给 block 模块按普通格挡 /
+        // 无格挡结算；配合 stance.break.execution-armor 的破甲，处决窗口内挨打就是纯血伤。
+        // 注意：纸人弹反窗口若在崩条前已开启，本窗口内不再弹反，已支付的纸人不退（窗口照常到期收盾）。
+        if (config.noParryWhileBroken() && stanceManager.isBroken(victim.getUniqueId())) {
+            sealManager.onHitLanded(attacker); // 没弹反 = 这一击打成了 → 打断攻击方的连续被弹反计数
             return;
         }
         // 近战 or 投射物分流：投射物（弓箭）2026-09-20 起也参与完美弹反判定，

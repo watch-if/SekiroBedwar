@@ -60,18 +60,22 @@ public final class SekiroApiImpl {
     private final SekiroBedwar plugin;
     private final DuelManager duelManager;
     private final StanceManager stanceManager;
+    private final org.alpha.sekiroBedwar.duel.DuelTriggerManager duelTriggerManager;
     /** 秘传运行时宿主（tick 时基 / 外部进度槽 / cue 发声），装配后期注入。 */
     private static org.alpha.sekiroBedwar.mystery.MysteryManager mysteryRuntime;
 
-    private SekiroApiImpl(SekiroBedwar plugin, DuelManager duelManager, StanceManager stanceManager) {
+    private SekiroApiImpl(SekiroBedwar plugin, DuelManager duelManager, StanceManager stanceManager,
+                          org.alpha.sekiroBedwar.duel.DuelTriggerManager duelTriggerManager) {
         this.plugin = plugin;
         this.duelManager = duelManager;
         this.stanceManager = stanceManager;
+        this.duelTriggerManager = duelTriggerManager;
     }
 
     /** 主线程安装（onEnable 装配早期）；重复调用覆盖。 */
-    public static void install(SekiroBedwar plugin, DuelManager duelManager, StanceManager stanceManager) {
-        instance = new SekiroApiImpl(plugin, duelManager, stanceManager);
+    public static void install(SekiroBedwar plugin, DuelManager duelManager, StanceManager stanceManager,
+                               org.alpha.sekiroBedwar.duel.DuelTriggerManager duelTriggerManager) {
+        instance = new SekiroApiImpl(plugin, duelManager, stanceManager, duelTriggerManager);
     }
 
     /** 注入秘传运行时宿主（MysteryManager 创建后调用）。 */
@@ -141,6 +145,22 @@ public final class SekiroApiImpl {
             out.add(snapshot(d, null));
         }
         return Collections.unmodifiableList(out);
+    }
+
+    // ==================== 命令（外部插件可调用，谨慎） ====================
+
+    /**
+     * 强制开一场决斗（无红白圈 / 无荧光，保留架势 UI 与全部决斗机制）。
+     * 委托 {@link org.alpha.sekiroBedwar.duel.DuelTriggerManager#forceDuel}。未安装返回 false。
+     * 必须在 Bukkit 主线程调用。
+     */
+    public static boolean startDuel(org.bukkit.entity.Player a, org.bukkit.entity.Player b,
+                                    org.bukkit.Location center, double radius) {
+        SekiroApiImpl i = instance;
+        if (i == null || i.duelTriggerManager == null) {
+            return false;
+        }
+        return i.duelTriggerManager.forceDuel(a, b, center, radius);
     }
 
     public static StanceSnapshot stance(UUID uuid) {

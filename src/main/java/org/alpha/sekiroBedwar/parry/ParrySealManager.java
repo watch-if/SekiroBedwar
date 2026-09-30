@@ -25,7 +25,7 @@ import java.util.UUID;
  *   <li><b>中间不能有普通弹反</b>：一次普通格挡（对方格挡但未命中完美弹反窗口）或成功命中
  *       （近战或弓箭）都会打断连续计数（{@link #onHitLanded} 清零）。</li>
  * </ul>
- * 计数由 {@link ParryManager} 在同一个 HIGH 回调里驱动，避免新增同优先级监听依赖注册顺序：
+ * 计数由 {@link ParryManager} 在同一个 LOW 回调里驱动，避免新增同优先级监听依赖注册顺序：
  * <ul>
  *   <li><b>完美弹反成功</b> → {@link #onAttackParried}：被弹反方（攻击者）连续次数按时间窗累计 +1；
  *       达到阈值则施加封印并重置计数（此后重新累计）；封印期间不累计；</li>

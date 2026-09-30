@@ -27,7 +27,8 @@ import java.util.Set;
  *
  * <p><b>破盾</b>（{@code block.shield-break.*}）：攻击方主手为配置的破盾武器（默认六种斧）且
  * 命中普通格挡（非完美弹反）时——防守方架势改为按 {@code stance-multiplier} 更高倍率扣减，
- * 并短暂禁用其格挡（无法正常格挡窗口）。完美弹反的命中在 HIGH 优先级已被取消，本模块不可见。</p>
+ * 并短暂禁用其格挡（无法正常格挡窗口）。完美弹反 / 被封印的命中在 LOW 优先级已被取消
+ * （LOW 先于本模块的 NORMAL），本模块不可见。</p>
  */
 public final class BlockConfig {
     private final SekiroBedwar plugin;

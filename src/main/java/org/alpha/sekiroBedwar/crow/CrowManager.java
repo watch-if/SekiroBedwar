@@ -354,6 +354,24 @@ public final class CrowManager {
         }
     }
 
+    /**
+     * 本次命中是否会被<b>雾璃鸦护身</b>挡下（= 受击方正在悬停 + 玩家来源伤害）。
+     *
+     * <p>供 {@link org.alpha.sekiroBedwar.block.BlockManager} 在扣架势<b>之前</b>询问：护身的取消发生在
+     * HIGHEST（晚于格挡换算 NORMAL），若不问就会「免伤了、架势却照样被扣」——与完美弹反在 LOW
+     * 修复前的问题同源。判定口径与 {@link #handleDamage} 完全一致（含排除自伤 / 非玩家来源）。</p>
+     */
+    public boolean wouldNegate(EntityDamageByEntityEvent event, Player victim) {
+        if (!config.enabled() || event == null || victim == null) {
+            return false;
+        }
+        if (!hovering.containsKey(victim.getUniqueId())) {
+            return false;
+        }
+        Player attacker = CombatUtils.resolveAttacker(event);
+        return attacker != null && !attacker.equals(victim);
+    }
+
     /** 悬停期间受到玩家来源的首次伤害：免伤 + 传送到攻击方身后 + 破碎。 */
     public void handleDamage(EntityDamageByEntityEvent event) {
         if (!(event.getEntity() instanceof Player victim)) {
@@ -371,9 +389,17 @@ public final class CrowManager {
         hovering.remove(victim.getUniqueId());
         clearDisplay(state);
         shatterFx(victim);
+        // 传送【延后 1 tick】：在伤害事件回调里同步传送，位置包会与客户端正在处理的包撞在同一 tick，
+        // 客户端/服务端坐标短时不一致 → 表现「传送后 1~2 秒内攻击【完全没反应】」（攻击包被服务端按
+        // 位置不符丢弃，连受伤动画都没有），双方互相都打不出伤害。落点仍按命中瞬间的双方位置算好。
+        // 与 shop/ 的「开窗前换窗有客户端 desync 坑 → 下一 tick 打开」同类。
         Location behind = findSafeLocationBehind(attacker);
         if (behind != null) {
-            victim.teleport(behind);
+            Bukkit.getScheduler().runTask(plugin, () -> {
+                if (victim.isOnline() && !victim.isDead()) {
+                    victim.teleport(behind);
+                }
+            });
         }
     }
 

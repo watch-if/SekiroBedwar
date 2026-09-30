@@ -96,6 +96,17 @@ public final class DangerManager {
         return attacker.isSprinting();
     }
 
+    /**
+     * 本次命中是否会被<b>识破</b>取消（= 危攻击 + 受害者处于识破窗口）。
+     *
+     * <p>供 {@link org.alpha.sekiroBedwar.block.BlockManager} 在扣架势<b>之前</b>询问：识破的取消发生在
+     * HIGHEST（晚于格挡换算 NORMAL），若不问就会「识破免伤了、架势却照样被扣、甚至被破盾」——
+     * 与完美弹反在 LOW 修复前的问题同源（取消必须早于读状态的模块，或由读方主动回避）。</p>
+     */
+    public boolean willMikiri(EntityDamageByEntityEvent event, Player victim) {
+        return config.enabled() && isDangerAttack(event) && isMikiri(victim);
+    }
+
     /** 识破：受害者下蹲且距下蹲 ≤ mikiri-window-ms。 */
     public boolean isMikiri(Player victim) {
         if (victim == null || !victim.isSneaking()) {

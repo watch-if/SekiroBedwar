@@ -393,6 +393,12 @@ public final class WelcomeManager implements Listener {
      * {@code ComponentSerializer.toString(parts)}（本身就是一个 JSON 数组）再原样嵌入。</p>
      *
      * <p><b>兜底</b>：万一 JSON 生成失败，直接退化为原始纯文本页（仍有颜色码与换行）。</p>
+     *
+     * <p><b>★ 2026-09-30 修「书乱码」</b>：实机出现过"整页显示成 JSON 源码"（客户端把页文本
+     * 当普通字符串渲染）。根因是页 JSON 里有任何一处不合法 / <b>单元素被写成对象</b>时，
+     * 服务端解析失败就整页当纯文本发出去。现在加两道闸：① 每行的 {@code runs} 必须以
+     * {@code [} 开头（不是数组就整页退回纯文本）；② 组装完<b>真的用 Gson 解析一遍</b>，
+     * 解析不过同样退回纯文本 —— 宁可丢样式，绝不把坏 JSON 发给客户端。</p>
      */
     private static String buildPage(String page) {
         try {
@@ -400,12 +406,17 @@ public final class WelcomeManager implements Listener {
             for (String raw : page.split("\n", -1)) {
                 String line = raw.stripTrailing();
                 String runs = ComponentSerializer.toString(TextComponent.fromLegacyText(line));
+                if (runs == null || !runs.startsWith("[")) {
+                    return page;   // 单元素被写成对象 → 整页退回纯文本
+                }
                 sb.append(",{\"text\":\"\",\"extra\":").append(runs).append("}");
                 sb.append(",{\"text\":\"\\n\"}");
             }
             sb.append(']');
-            return sb.toString();
-        } catch (RuntimeException ex) {
+            String json = sb.toString();
+            com.google.gson.JsonParser.parseString(json);   // 解析不过就退纯文本
+            return json;
+        } catch (RuntimeException | Error ex) {
             return page;
         }
     }

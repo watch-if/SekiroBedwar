@@ -6,6 +6,7 @@ import org.bukkit.Bukkit;
 import org.bukkit.Material;
 import org.bukkit.entity.Player;
 import org.bukkit.event.entity.EntityDamageByEntityEvent;
+import org.bukkit.event.entity.EntityDamageEvent.DamageModifier;
 import org.bukkit.event.entity.EntityRegainHealthEvent;
 import org.bukkit.scheduler.BukkitTask;
 import net.md_5.bungee.api.ChatMessageType;
@@ -40,6 +41,11 @@ import java.util.UUID;
  * {@code stagger.disable-blocking} 控制（默认 true）：开启时崩条瞬间 {@code setCooldown(SHIELD, …)}
  * 强制盾牌冷却，并由周期任务 {@link #enforceGuard} 按剩余时长持续刷新——受击状态内
  * {@code isBlocking()} 保持 false（完美弹反轮询也随之失效），窗口到期自动恢复。</p>
+ *
+ * <p><b>处决窗口破甲</b>（{@code stance.break.execution-armor.*}，默认开启，2026-09-27 追加）：
+ * 崩条期间（处决窗口开启）<b>被处决者的护甲无效</b>——命中的护甲类减免被归零，伤害按「纯血伤」
+ * 结算（见 {@link #applyExecutionArmorBypass}）。设计意图：崩条 = 门户大开的处决时机，护甲不该
+ * 再把处决的收益吃掉；被处决方唯一的活路是趁窗口逃离。</p>
  *
  * <p><b>低血量拉临界</b>（{@code stance.break.low-health-threshold}，默认 2）：决斗中每次受击后，
  * 血量 ≤ 阈值且未死亡 → 架势强制拉到临界（幂等反复生效），不是崩条——低血量玩家持续处于临界，
@@ -83,6 +89,60 @@ public final class StanceBreakManager {
             guardTask.cancel();
             guardTask = null;
         }
+    }
+
+    /**
+     * <b>处决窗口破甲</b>（{@code stance.break.execution-armor.*}，默认开启）：崩条（处决窗口开启）
+     * 期间<b>被处决者的护甲无效</b>——把本次命中的护甲类减免直接归零，伤害按「纯血伤」结算。
+     *
+     * <p><b>归零项</b>：{@code ARMOR}（护甲点减伤）与 {@code HARD_HAT}（仅头盔覆盖时的减伤）
+     * 无条件归零；{@code MAGIC}（保护类附魔的减伤——1.21.11 的 {@link DamageModifier} 里没有单独的
+     * {@code ARMOR_ENCHANTMENTS}，保护走 MAGIC）由 {@code strip-enchant} 控制，默认一并归零。
+     * 抗性药水（{@code RESISTANCE}）、吸收之心（{@code ABSORPTION}）、盾牌格挡（{@code BLOCKING}）
+     * <b>不动</b>——本机制只针对「护甲」。</p>
+     *
+     * <p><b>为什么用修饰符置零而不是按比例反推基础伤害</b>：{@code getFinalDamage()/getDamage()} 反推
+     * 会把抗性 / 吸收一起卷进来（多扣），而 {@code setDamage(DamageModifier, 0)} 只精确移除指定减伤项，
+     * 语义清晰、无副作用。API 已实测：spigot-api 1.21.11 同时具备
+     * {@code isApplicable(DamageModifier)} / {@code getDamage(DamageModifier)} / {@code setDamage(DamageModifier,double)}。</p>
+     *
+     * <p><b>调用时序</b>：由 {@link org.alpha.sekiroBedwar.block.BlockManager} 在「ACTIVE 决斗内对方命中」
+     * 判定之后、扣架势<b>之前</b>调用——因此后续的架势换算（无格挡取 {@code getFinalDamage()}）与
+     * 低血量拉临界判定读到的都是破甲后的真实伤害。决斗外、非玩家来源（摔落 / 火焰 / 非玩家 TNT 等）
+     * 不经过本路径。</p>
+     */
+    @SuppressWarnings({"deprecation", "removal"})
+    public void applyExecutionArmorBypass(EntityDamageByEntityEvent event, Player victim) {
+        if (!config.executionArmorEnabled() || event == null || victim == null) {
+            return;
+        }
+        if (!stanceManager.isBroken(victim.getUniqueId())) {
+            return; // 只在处决窗口（崩条）期间破甲
+        }
+        double base = event.getDamage();
+        if (base <= 0.0) {
+            return;
+        }
+        zeroModifier(event, DamageModifier.ARMOR);
+        zeroModifier(event, DamageModifier.HARD_HAT);
+        if (config.executionArmorStripEnchant()) {
+            zeroModifier(event, DamageModifier.MAGIC);
+        }
+        if (config.executionArmorLog()) {
+            plugin.getLogger().info("[处决破甲] " + victim.getName()
+                    + " 面板=" + round2(base) + " 实收=" + round2(event.getFinalDamage()) + "（护甲减免已归零）");
+        }
+    }
+
+    /** 该减免项适用时置零（{@code isApplicable} 守卫，避免对不适用的修饰符写入）。 */
+    private static void zeroModifier(EntityDamageByEntityEvent event, DamageModifier modifier) {
+        if (event.isApplicable(modifier)) {
+            event.setDamage(modifier, 0.0);
+        }
+    }
+
+    private static double round2(double value) {
+        return Math.round(value * 100.0) / 100.0;
     }
 
     /**

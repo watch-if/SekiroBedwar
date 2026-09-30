@@ -36,6 +36,21 @@ stance:
     # 崩条后结算 / 逃离窗口时长（秒；25s）。期间可逃离决斗场地（越界拉回/传送豁免），
     # 处决者击杀被处决者 = 全额结算；窗口到期未击杀 = 只能结算对方一半物资并立即结束决斗
     execution-seconds: 25
+    # 处决窗口破甲：崩条（处决窗口开启）期间【被处决者的护甲无效】——命中按「纯血伤」结算。
+    # 设计意图：崩条 = 门户大开的处决时机，护甲不该再吃掉处决收益；被处决方唯一活路是趁窗口逃离。
+    # 实现 = 把命中的护甲类减免项直接置零（EntityDamageEvent.setDamage(DamageModifier, 0)）：
+    #   ARMOR（护甲点减伤）与 HARD_HAT（仅头盔覆盖时）无条件归零；
+    #   MAGIC（保护类附魔减伤；1.21.11 的 DamageModifier 无独立 ARMOR_ENCHANTMENTS，保护走 MAGIC）
+    #   由 strip-enchant 控制。抗性药水 / 吸收之心 / 盾牌格挡不动——本机制只针对「护甲」。
+    # 作用范围：仅 ACTIVE 决斗内对方命中（近战或投射物射手），即 BlockManager 既有的口径；
+    # 决斗外、非玩家来源（摔落 / 火焰 / 非玩家 TNT 等）不受影响。
+    execution-armor:
+      # 是否启用（false = 完全原版护甲结算）
+      enabled: true
+      # 保护类附魔的减伤是否也一并归零（true = 真正的「纯血伤」；false = 只破护甲点、附魔仍生效）
+      strip-enchant: true
+      # 是否打印诊断日志（控制台 [处决破甲] 行：面板伤害 vs 实收伤害；默认 false）
+      log: false
     # 低血量阈值：决斗中每次受击后，血量 ≤ 该值（且未死亡）→ 架势强制拉到临界（不崩条），
     # 幂等反复生效——低血量的玩家持续处于临界状态，下一次未被弹反的命中就会崩条
     low-health-threshold: 2.0
@@ -123,6 +138,12 @@ stance:
 parry:
   # 是否启用完美弹反
   enabled: true
+  # 处决窗口内不可完美弹反：崩条（处决窗口开启）期间，被处决者门户大开——其【举盾弹反】与
+  # 【纸人盾牌弹反窗口】一律不生效，命中直接按普通格挡 / 无格挡结算；配合
+  # stance.break.execution-armor 的破甲，处决窗口内挨打就是纯血伤，被处决方唯一活路是趁窗口逃离。
+  # 注意：纸人弹反窗口若在崩条前已开启，本窗口内不再弹反，已支付的纸人不退（窗口照常到期收盾）。
+  # 判定对象是「弹反者（受击方）」——崩条方自己出手被对方（未崩条）完美弹反，仍照常结算。
+  no-parry-while-broken: true
   # 完美弹反窗口（毫秒）：只检测「举盾后 base-window-ms 内」命中的攻击为完美弹反。
   # 举盾时刻 = 格挡轮询（poll-ticks）记录到的格挡开始；命中落在 [举盾, 举盾 + base-window-ms] 内即完美弹反。
   # 无攻击前 / 攻击后窗口之分、无网络延迟补偿；同 tick 刚举盾即命中由 0 延时兜底。
@@ -628,7 +649,7 @@ danger:
 # 实现 = 周期巡检逐人应用（每 iframe.scan-ticks 检查决斗状态并写帧参数，重生自动纠回）；
 # 插件禁用时全员恢复原版。
 iframe:
-  global-enabled: true
+  global-enabled: false
   duel-enabled: false
   # 巡检间隔（tick；5 = 0.25 秒）
   scan-ticks: 5
@@ -650,6 +671,15 @@ mystery:
   # 飞渡浮舟 / 一心七连：第 3 击起每段成功命中获得 / 刷新的防击退时长（秒，刷新不叠加；
   # 抵消实体来源的击退位移，伤害照常结算；0 = 关闭）
   knockback-guard-seconds: 1.0
+  # 取证日志（默认 false）：开启后把插件【自己判定】的秘传事件打到 console（前缀 [秘传取证]）：
+  #   START / HIT(段号,是否被弹反) / COMPLETE(总段,有效段) / FAIL(reason=脱拍等,reached=到第几击) / CANCEL。
+  # 用途 = 对照外部 bot 的客户端自评「我完成了飞渡」与插件实际判定：
+  #   · 看到 COMPLETE ⇒ 插件确实判完成（纸人应在同一处发放，没到账再查发放）；
+  #   · 看到 FAIL reason=OUT_OF_RHYTHM reached=N ⇒ 插件在第 N 击判脱拍（bot 自评有误，客户端 ms 与服务端 tick 漂移）；
+  #   · 完全没有该玩家该式的 START/HIT ⇒ 命中没进连段（多半当时不在 ACTIVE 决斗内，秘传只在决斗近战推进）。
+  # 纯叠加只读，不改任何战斗逻辑；排查完设回 false 即可（改动需重启）。
+  # 【临时】2026-09-28 排查「双方打不出伤害」期间默认开，定位后改回 false。
+  debug-log: true
   fei-du-fu-zhou:
     # 是否启用（全局武技，无需购买）
     enabled: true

@@ -155,7 +155,8 @@ public final class SekiroBedwar extends JavaPlugin {
         this.stanceManager = new StanceManager(this, stanceConfig);
         // 公共 API：安装内部发射器（事件与只读查询的宿主）+ 挂架势变化观察者。
         // 战斗统计 / 排位 / 录像等外部插件只依赖 api 包监听事件，核心不为其实现任何业务。
-        org.alpha.sekiroBedwar.api.internal.SekiroApiImpl.install(this, this.duelManager, this.stanceManager);
+        org.alpha.sekiroBedwar.api.internal.SekiroApiImpl.install(this, this.duelManager, this.stanceManager,
+                this.duelTriggerManager);
         org.alpha.sekiroBedwar.api.internal.SekiroApiImpl api =
                 org.alpha.sekiroBedwar.api.internal.SekiroApiImpl.get();
         if (api != null) {
@@ -279,8 +280,8 @@ public final class SekiroBedwar extends JavaPlugin {
         // 盾牌普通格挡不完全免架势——防守方扣 Dbase×defender-multiplier（攻击方不扣）。
         // 只处理 ACTIVE 决斗内对方攻击（含弓箭/投射物），不破坏原版战斗。
         this.blockManager = new BlockManager(this, new BlockConfig(this), stanceManager, duelManager,
-                stanceBreakManager, this.lightningManager, this.dangerManager, this.attributeManager,
-                this.mysteryManager);
+                stanceBreakManager, this.lightningManager, this.dangerManager, this.crowManager,
+                this.attributeManager, this.mysteryManager);
         this.blockManager.enable();
 
         // 完美弹反系统（独立模块，与普通格挡分离）：只判完美弹反——命中窗口则完整弹开攻击并重创
@@ -333,6 +334,15 @@ public final class SekiroBedwar extends JavaPlugin {
                 this.stanceBreakManager, this.duelManager, this.duelAreaGuard, this.mysteryManager,
                 this.sekiroShopManager, this.parryMarker);
         this.stompManager.enable();
+
+        // 取证日志器【最后注册】：它的「取消段」探针必须在每个优先级内排在所有取消者
+        //（风弹 LOWEST / 弹反·封印 LOW / 炎上TNT HIGH / 鸦护身·识破 HIGHEST / 踩头 等）之后，
+        // 归因才准确。仅 mystery.debug-log=true 时注册（默认关，零开销）。
+        if (mysteryConfig.debugLog()) {
+            getServer().getPluginManager().registerEvents(
+                    new org.alpha.sekiroBedwar.mystery.TechniqueDebugLogger(this), this);
+            getLogger().info("取证日志已开启（mystery.debug-log=true）：[秘传取证] 判定 + [伤害取证] 取消段归因（注册于最末）");
+        }
 
         getLogger().info("SekiroBedwar 已启用，决斗触发配置 radius=" + duelConfig.radius()
                 + " inner(y)=" + duelConfig.innerRadius() + " outer(z)=" + duelConfig.outerRadius()

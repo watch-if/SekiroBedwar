@@ -35,15 +35,30 @@ import java.util.Optional;
  *       并短暂禁用其格挡（{@link StanceManager#disableBlocking} + 盾牌强制冷却）。</li>
  * </ul></p>
  *
- * <p><b>与完美弹反的分工</b>：{@code ParryManager} 在 <b>HIGH</b> 优先级判定完美弹反并
- * {@code setCancelled(true)}（弹开的命中不再进入本模块）；本模块在 <b>NORMAL</b> 优先级
+ * <p><b>与完美弹反的分工</b>：{@code ParryManager} 在 <b>LOW</b> 优先级判定完美弹反 / 连续弹反封印
+ * 并 {@code setCancelled(true)}，<b>先于</b>本模块（NORMAL）——Bukkit 执行序
+ * {@code LOWEST → LOW → NORMAL → HIGH → HIGHEST → MONITOR}；本模块在 NORMAL
  * （{@code ignoreCancelled=true}）处理其余全部命中——因此“格挡但未命中完美弹反窗口”的命中
- * 天然按普通格挡处理，绝不会被误判为完美弹反；同理，<b>完美弹反成功的命中绝不触发破盾</b>
- * （已取消，本模块不可见）。</p>
+ * 天然按普通格挡处理，绝不会被误判为完美弹反；同理，<b>完美弹反成功的命中绝不触发破盾、
+ * 也不会再被按普通格挡扣掉防守方架势</b>（已取消，本模块不可见）。
+ * 注意：2026-09-27 之前 ParryListener 用 HIGH，实际晚于本模块的 NORMAL——
+ * 于是弹反者会先被本模块扣一笔普通格挡架势且撤不回（「弹反掉架势」bug 的根因）。</p>
  *
  * <p><b>崩条 / 低血量钩子</b>：在扣架势之前把每次未弹反命中转给
  * {@link StanceBreakManager#onIncomingHit}（临界玩家被近战未弹反命中 → 崩条；
  * 远程命中不崩只维持临界；低血量受击 → 拉满到临界）。</p>
+ *
+ * <p><b>会被取消的命中提前退出</b>（2026-09-27）：识破（{@code DangerListener} HIGHEST）与
+ * 雾璃鸦护身（{@code CrowListener} HIGHEST）的取消都晚于本模块（NORMAL）——若不提前退出，
+ * 命中虽被免伤、架势却照样被扣（识破还会连带吃危格挡的破盾惩罚）。本模块在扣架势前先问
+ * {@link DangerManager#willMikiri} / {@link org.alpha.sekiroBedwar.crow.CrowManager#wouldNegate}，
+ * 命中即整击跳过（架势换算 / 破甲 / 崩条与低血量判定一概不参与）。</p>
+ *
+ * <p><b>处决窗口破甲</b>（2026-09-27）：同一位置先调用
+ * {@link StanceBreakManager#applyExecutionArmorBypass}——受击方<b>已崩条</b>（处决窗口开启）时，
+ * 把本次命中的护甲类减免归零（{@code ARMOR} / {@code HARD_HAT}，{@code strip-enchant} 时含
+ * {@code MAGIC} 保护附魔），命中按<b>纯血伤</b>结算。放在扣架势之前，故架势换算与低血量判定
+ * 读到的都是破甲后的真实伤害。</p>
  */
 public final class BlockManager {
     private final SekiroBedwar plugin;
@@ -53,6 +68,7 @@ public final class BlockManager {
     private final StanceBreakManager stanceBreakManager;
     private final LightningManager lightningManager;
     private final DangerManager dangerManager;
+    private final org.alpha.sekiroBedwar.crow.CrowManager crowManager;
     private final org.alpha.sekiroBedwar.attribute.AttributeManager attributeManager;
     private final org.alpha.sekiroBedwar.mystery.MysteryManager mysteryManager;
     private final BlockListener listener;
@@ -61,6 +77,7 @@ public final class BlockManager {
                         StanceManager stanceManager, DuelManager duelManager,
                         StanceBreakManager stanceBreakManager, LightningManager lightningManager,
                         DangerManager dangerManager,
+                        org.alpha.sekiroBedwar.crow.CrowManager crowManager,
                         org.alpha.sekiroBedwar.attribute.AttributeManager attributeManager,
                         org.alpha.sekiroBedwar.mystery.MysteryManager mysteryManager) {
         this.plugin = plugin;
@@ -70,6 +87,7 @@ public final class BlockManager {
         this.stanceBreakManager = stanceBreakManager;
         this.lightningManager = lightningManager;
         this.dangerManager = dangerManager;
+        this.crowManager = crowManager;
         this.attributeManager = attributeManager;
         this.mysteryManager = mysteryManager;
         this.listener = new BlockListener(this);
@@ -113,8 +131,20 @@ public final class BlockManager {
             return;
         }
 
+        // 会被后续监听取消的命中：识破（DangerListener HIGHEST）与雾璃鸦护身（CrowListener HIGHEST）
+        // 都晚于本模块（NORMAL）——若不在这里提前退出，就会出现「免伤了、架势却照样被扣」
+        //（识破还会连带吃危格挡的破盾惩罚）。与完美弹反在 LOW 修复前的问题同源。
+        // 判定口径由各模块自己提供（willMikiri / wouldNegate），不在本模块重复判断逻辑。
+        if (dangerManager.willMikiri(event, victim) || crowManager.wouldNegate(event, victim)) {
+            return;
+        }
+
+        // 处决窗口破甲（stance.break.execution-armor.*）：受击方已崩条（处决窗口开启）→ 护甲无效，
+        // 本次命中按纯血伤结算。必须在扣架势 / 低血量判定【之前】——后续换算与判定读到的才是破甲后的真实伤害。
+        stanceBreakManager.applyExecutionArmorBypass(event, victim);
+
         // 崩条 / 低血量规则：在扣架势【之前】判定（保证读到命中前的临界状态）。
-        // 能走到这里的命中必是未完美弹反的（弹反的已在 HIGH 优先级被 cancel）——
+        // 能走到这里的命中必是未完美弹反 / 未被封印的（那些已在 LOW 优先级被 cancel）——
         // 临界玩家被近战未弹反命中 → 崩条；远程命中不崩只维持临界；低血量受击 → 拉满到临界。
         stanceBreakManager.onIncomingHit(victim, event);
 

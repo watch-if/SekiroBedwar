@@ -64,6 +64,39 @@ public final class SekiroBedwarApi {
         return SekiroApiImpl.activeDuels();
     }
 
+    // ==================== 决斗命令（外部插件强制开决斗） ====================
+
+    /**
+     * <b>强制开一场决斗</b>（命令钩子，2026-09-28 新增）：跳过正常触发条件（互相命中 / 第三方 / 冷却），
+     * 直接把两名玩家拉进决斗。用于 boss 图等「外部插件规定好决斗场、进对局即成决斗」的场景
+     * （例如只在决斗内才展现攻击性的 bot）。boss 何时 / 对谁 / 在哪开决斗的逻辑在<b>调用方插件</b>，
+     * 核心只提供这个通用钩子。
+     *
+     * <p><b>与正常决斗的区别</b>：<b>没有红白双圈粒子、没有 GLOWING 荧光、没有第三方高亮</b>；
+     * 但架势系统、BossBar 互显、经验条显示自己架势（架势 UI）、area-guard 边界、第三方闯入结束、
+     * 死亡结算、物资 / 复活冻结、红圈生物禁令等<b>全部机制照常</b>。</p>
+     *
+     * <p>决斗场（圆心 + 半径）决定 area-guard 边界与第三方 / 生物禁令范围。必须在 Bukkit 主线程调用。
+     * 决斗经 PENDING→（{@code duel.pending-seconds}，默认 0.5s）→ACTIVE。</p>
+     *
+     * @param a      决斗方 A（在线、与 b 同一 RUNNING 对局、未在决斗中）
+     * @param b      决斗方 B
+     * @param center 决斗场圆心；{@code null} = 自动取两人当前位置中点
+     * @param radius 决斗场半径（≤0 = 用 {@code duel.yml} 的 {@code radius}）
+     * @return 是否成功开决斗（参数非法 / 任一离线 / 已在决斗 / 不同对局 / 对局非 RUNNING → false）
+     */
+    public static boolean startDuel(Player a, Player b, org.bukkit.Location center, double radius) {
+        return SekiroApiImpl.startDuel(a, b, center, radius);
+    }
+
+    /**
+     * 强制开一场决斗（决斗场自动取两人当前位置中点、半径用 {@code duel.yml} 的 {@code radius}）。
+     * 等价 {@code startDuel(a, b, null, 0)}。语义与限制见重载版本。
+     */
+    public static boolean startDuel(Player a, Player b) {
+        return SekiroApiImpl.startDuel(a, b, null, 0.0);
+    }
+
     // ==================== 架势（只读查询） ====================
 
     /**

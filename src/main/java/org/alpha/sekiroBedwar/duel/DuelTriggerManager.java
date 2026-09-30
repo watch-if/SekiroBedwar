@@ -3,6 +3,7 @@ package org.alpha.sekiroBedwar.duel;
 import org.alpha.sekiroBedwar.SekiroBedwar;
 import org.alpha.sekiroBedwar.event.DuelTriggeredEvent;
 import org.bukkit.Bukkit;
+import org.bukkit.Location;
 import org.bukkit.entity.Player;
 import org.screamingsandals.bedwars.api.BedwarsAPI;
 import org.screamingsandals.bedwars.api.Team;
@@ -197,6 +198,78 @@ public final class DuelTriggerManager {
         cooldowns.put(key, System.currentTimeMillis());
         Bukkit.getPluginManager().callEvent(new DuelTriggeredEvent(attacker, victim, gameA, island));
         visualizer.show(attacker, victim, island, gameA);
+        return true;
+    }
+
+    /**
+     * <b>强制开一场决斗</b>（外部命令钩子，供 {@code SekiroBedwarApi.startDuel} 调用）：
+     * 跳过 {@link #tryTriggerDuel} 的全部触发条件（互相命中 / 第三方 / 冷却），直接建决斗。
+     *
+     * <p><b>与正常触发的唯一区别 = 不调用 {@link DuelVisualizer#show}</b>：因此<b>没有红白双圈粒子、
+     * 没有 GLOWING 荧光、没有第三方高亮</b>；但 {@link DuelTriggeredEvent} 照常广播 →
+     * {@link DuelLifecycleListener} 建决斗（PENDING→ACTIVE）、{@code StanceListener} 初始化架势 +
+     * BossBar 互显 + 经验条显示自己架势（<b>架势 UI 保留</b>）。area-guard / 第三方结束 / 结算 /
+     * 冻结 / 生物禁令等<b>全部机制照常</b>（它们由「决斗存在 + 岛屿」驱动，与视觉无关）。</p>
+     *
+     * <p>用途：boss 图等由外部插件（如 bot 插件）规定好决斗场后，进对局即强制成决斗，
+     * 让只在决斗内才展现攻击性的 bot 发挥实力。boss 逻辑在外部插件，本方法只是通用钩子。</p>
+     *
+     * @param a      决斗方 A（在线、与 b 同一 RUNNING 对局、未在决斗中）
+     * @param b      决斗方 B
+     * @param center 决斗场圆心（决定 area-guard 边界与第三方 / 生物禁令范围）；
+     *               {@code null} = 自动取两人当前位置中点。两条路径都<b>直接造岛</b>，
+     *               不受 {@link #tryTriggerDuel} 的距离 / 白名单 / 实心（isLegal）范围限制
+     * @param radius 决斗场半径（≤0 = 用 {@code duel.yml} 的 {@code radius}）
+     * @return 是否成功开决斗；参数非法 / 任一离线 / 已在决斗 / 不同对局 / 对局非 RUNNING
+     *         （center=null 时还要求两人同世界）时返回 false。<b>不因范围 / 距离 / 实心校验失败</b>
+     */
+    public boolean forceDuel(Player a, Player b, Location center, double radius) {
+        if (a == null || b == null || a.equals(b) || !a.isOnline() || !b.isOnline()) {
+            return false;
+        }
+        if (alreadyInDuelPredicate != null
+                && (alreadyInDuelPredicate.test(a.getUniqueId()) || alreadyInDuelPredicate.test(b.getUniqueId()))) {
+            return false;
+        }
+        if (Bukkit.getPluginManager().getPlugin("ScreamingBedWars") == null) {
+            return false;
+        }
+        PlayerManager playerManager = BedwarsAPI.getInstance().getPlayerManager();
+        Optional<? extends BWPlayer> optA = playerManager.getPlayer(a.getUniqueId());
+        Optional<? extends BWPlayer> optB = playerManager.getPlayer(b.getUniqueId());
+        if (optA.isEmpty() || optB.isEmpty()) {
+            return false;
+        }
+        BWPlayer bwA = optA.get();
+        BWPlayer bwB = optB.get();
+        if (bwA.isSpectator() || bwB.isSpectator() || !bwA.isInGame() || !bwB.isInGame()) {
+            return false;
+        }
+        LocalGame gameA = bwA.getGame();
+        LocalGame gameB = bwB.getGame();
+        if (gameA == null || gameB == null || !gameA.getUuid().equals(gameB.getUuid())
+                || gameA.getStatus() != GameStatus.RUNNING) {
+            return false;
+        }
+        // 决斗场：调用方传圆心则用之（半径 ≤0 回退配置 radius）；否则自动取两人中点。
+        // 两条路径都【直接造岛】，绕开 resolveIsland 的距离/白名单限制与 isLegal 实心校验——
+        // 强制决斗不受「原始触发范围」约束（用户明确要求）。唯一几何前提：center=null 时两人须同世界才能取中点。
+        DuelIsland island;
+        if (center != null && center.getWorld() != null) {
+            island = DuelIsland.derived(center.getWorld(), center.getX(), center.getY(), center.getZ(),
+                    radius > 0.0 ? radius : config.radius());
+        } else {
+            Location la = a.getLocation();
+            Location lb = b.getLocation();
+            if (la.getWorld() == null || !la.getWorld().equals(lb.getWorld())) {
+                return false; // 跨世界无法取中点（几何前提，非范围限制）
+            }
+            island = DuelIsland.derived(la.getWorld(),
+                    (la.getX() + lb.getX()) / 2.0, (la.getY() + lb.getY()) / 2.0, (la.getZ() + lb.getZ()) / 2.0,
+                    radius > 0.0 ? radius : config.radius());
+        }
+        // 广播事件（建决斗 + 架势 + UI），但【不调 visualizer.show】→ 无红白圈、无荧光
+        Bukkit.getPluginManager().callEvent(new DuelTriggeredEvent(a, b, gameA, island));
         return true;
     }
 
