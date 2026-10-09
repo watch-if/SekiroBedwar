@@ -12,6 +12,7 @@ import org.bukkit.scheduler.BukkitTask;
 import net.md_5.bungee.api.ChatMessageType;
 import net.md_5.bungee.api.chat.TextComponent;
 
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -66,6 +67,16 @@ public final class StanceBreakManager {
 
     /** 无法格挡强制的周期任务。 */
     private BukkitTask guardTask;
+    /** 采样任务：决斗中每 5 tick 记一次架势读数（供"决斗结束后仍断回血"的残留读数用）。 */
+    private BukkitTask stanceWatchTask;
+    /** 玩家最后一次"决斗内"的架势读数缓存：{@code {current, max}}（{@code watchStances()} 每 5 tick 刷新）。 */
+    private final java.util.Map<UUID, double[]> lastStanceReading = new java.util.concurrent.ConcurrentHashMap<>();
+    /** 每个玩家最近一次决斗结束时间（用于 {@code post-duel-grace-seconds} 保护窗口）。 */
+    private final java.util.Map<UUID, Long> lastDuelEndAt = new java.util.concurrent.ConcurrentHashMap<>();
+    /** 上次采样到的血量（{@code 回血取证} 的"旁路 setHealth"监测用）。 */
+    private final java.util.Map<UUID, Double> lastHealthSeen = new java.util.concurrent.ConcurrentHashMap<>();
+    /** 最近一次"走过回血事件"的时间戳（用于给血量上涨打"事件型 / 旁路型"标签）。 */
+    private final java.util.Map<UUID, Long> lastEventGainAt = new java.util.concurrent.ConcurrentHashMap<>();
 
     public StanceBreakManager(SekiroBedwar plugin, StanceConfig config, StanceManager stanceManager) {
         this.plugin = plugin;
@@ -81,10 +92,22 @@ public final class StanceBreakManager {
             guardTask = plugin.getServer().getScheduler().runTaskTimer(plugin, this::enforceGuard, 1L,
                     Math.max(1, config.guardCheckTicks()));
         }
+        // ★ 采样任务：架势读数缓存（与 guardTask 独立 —— 回血阻断需要它，
+        //   而 guardTask 只在"禁格挡"开启时才跑）。
+        if (stanceWatchTask == null) {
+            stanceWatchTask = plugin.getServer().getScheduler()
+                    .runTaskTimer(plugin, this::watchStances, 1L, 5L);
+        }
     }
 
     /** 插件禁用：取消强制冷却任务。 */
     public void disable() {
+        if (stanceWatchTask != null) {
+            stanceWatchTask.cancel();
+            stanceWatchTask = null;
+        }
+        lastStanceReading.clear();
+        lastDuelEndAt.clear();
         if (guardTask != null) {
             guardTask.cancel();
             guardTask = null;
@@ -164,11 +187,13 @@ public final class StanceBreakManager {
         if (playerSource && stanceManager.isCritical(victim.getUniqueId())) {
             if (victim.isBlocking() && config.breakOnBlockedHit()) {
                 breakStance(victim);
+                rewardBreaker(attacker);   // ★ 打进处决窗口者：架势回满 + 回血
                 notifyBreak(attacker, victim);
                 org.alpha.sekiroBedwar.api.internal.SekiroApiImpl.stanceBreak(
                         victim.getUniqueId(), attacker.getUniqueId());
             } else if (!victim.isBlocking() && config.breakOnUnblockedHit()) {
                 breakStance(victim);
+                rewardBreaker(attacker);   // ★ 打进处决窗口者：架势回满 + 回血
                 notifyBreak(attacker, victim);
                 org.alpha.sekiroBedwar.api.internal.SekiroApiImpl.stanceBreak(
                         victim.getUniqueId(), attacker.getUniqueId());
@@ -202,11 +227,13 @@ public final class StanceBreakManager {
         if (stanceManager.isCritical(victim.getUniqueId())) {
             if (victim.isBlocking() && config.breakOnBlockedHit()) {
                 breakStance(victim);
+                rewardBreaker(attacker);   // ★ 打进处决窗口者：架势回满 + 回血
                 notifyBreak(attacker, victim);
                 org.alpha.sekiroBedwar.api.internal.SekiroApiImpl.stanceBreak(
                         victim.getUniqueId(), attacker == null ? null : attacker.getUniqueId());
             } else if (!victim.isBlocking() && config.breakOnUnblockedHit()) {
                 breakStance(victim);
+                rewardBreaker(attacker);   // ★ 打进处决窗口者：架势回满 + 回血
                 notifyBreak(attacker, victim);
                 org.alpha.sekiroBedwar.api.internal.SekiroApiImpl.stanceBreak(
                         victim.getUniqueId(), attacker == null ? null : attacker.getUniqueId());
@@ -225,6 +252,8 @@ public final class StanceBreakManager {
     public void onAttackParried(Player attacker, Player parryer) {
         if (config.breakOnParriedAttack() && stanceManager.isCritical(attacker.getUniqueId())) {
             breakStance(attacker);
+            // ★ 弹反成功把对方打进处决窗口 → 弹反者获得奖励（架势回满 + 回血）
+            rewardBreaker(parryer);
             org.alpha.sekiroBedwar.api.internal.SekiroApiImpl.stanceBreak(
                     attacker.getUniqueId(), parryer == null ? null : parryer.getUniqueId());
             if (attacker != null && attacker.isOnline()) {
@@ -238,28 +267,272 @@ public final class StanceBreakManager {
      * 自然回血阻断：架势非满时取消 SATIATED 自然回血（金苹果 / 药水等主动治疗不受影响）。
      * 不在决斗中时 getStance/getMaxStance 均为 0，天然不命中。
      */
+    /**
+     * 自然回血阻断：按 {@code stance.health-regen.block-when} 口径取消<b>自然回血</b>
+     * （金苹果 / 药水 / 秘传奖励等主动治疗不受影响）。
+     *
+     * <p><b>SATIATED 与 REGEN 一视同仁</b>：实机取证发现只拦 SATIATED 是不够的 ——
+     * 玩家/机器人还在以 {@code reason=REGEN 量=1.0} 每秒回血，那条根本没被拦住
+     * （1508 条 SATIATED 全部取消 ✓ vs 444 条 REGEN 全部放行 ✗），
+     * 表现就是"架势没满却还能自然回血"。用 {@code name()} 比较以兼容旧 API。</p>
+     */
     public void handleRegainHealth(EntityRegainHealthEvent event) {
         if (!config.blockNaturalRegen()) {
-            return;
-        }
-        if (event.getRegainReason() != EntityRegainHealthEvent.RegainReason.SATIATED) {
             return;
         }
         if (!(event.getEntity() instanceof Player player)) {
             return;
         }
-        UUID uuid = player.getUniqueId();
-        if (stanceManager.getStance(uuid) < stanceManager.getMaxStance(uuid)) {
+        boolean naturalReason = event.getRegainReason() == EntityRegainHealthEvent.RegainReason.SATIATED
+                || "REGEN".equals(event.getRegainReason().name());
+        if (config.blockNaturalRegenLog()) {
+            plugin.getLogger().info("[回血取证] " + player.getName()
+                    + " reason=" + event.getRegainReason()
+                    + " 量=" + String.format(java.util.Locale.ROOT, "%.1f", event.getAmount())
+                    + (naturalReason ? ""
+                            : "（★ 非自然回血：不受架势阻断管辖 —— 药水/金苹果/秘传奖励等）"));
+        }
+        if (!naturalReason) {
+            return;
+        }
+        if (shouldBlockNaturalRegen(player)) {
             event.setCancelled(true);
+            return;
+        }
+        // 真正放行了一次"事件型"回血 → 记时间戳，供旁路监测区分
+        // 「事件型」与「旁路 setHealth 型」（对**被取消**的事件不记，否则旁路行会被误标）。
+        lastEventGainAt.put(player.getUniqueId(), System.currentTimeMillis());
+    }
+
+    /** 按配置口径判断这次自然回血该不该被取消。 */
+    private boolean shouldBlockNaturalRegen(Player player) {
+        UUID uuid = player.getUniqueId();
+        boolean hasStance = stanceManager.hasStance(uuid);
+        double cur = stanceManager.getStance(uuid);
+        double max = stanceManager.getMaxStance(uuid);
+
+        // ★ 根因修复：决斗结束时 endDuel 会把架势状态整个清掉
+        //   （hasStance=false、cur=max=0），原判定 `cur < max` 立刻不成立 → 自然回血放行。
+        //   于是"架势没满却还能回血"。这里改成：读不到实时架势时，**沿用决斗内最后一次读数**
+        //   （watchStances 每 5 tick 采一次，最多保留 post-duel-grace-seconds 秒）——
+        //   只要那会儿架势没满，回血就继续被拦。
+        boolean cachedNotFull = false;
+        double[] last = lastStanceReading.get(uuid);
+        if (!hasStance && last != null && last[1] > 0.0 && last[0] < last[1]) {
+            Long endedAt = lastDuelEndAt.get(uuid);
+            long graceMillis = (long) (config.postDuelRegenGraceSeconds() * 1000.0);
+            if (endedAt == null || graceMillis <= 0 || System.currentTimeMillis() - endedAt < graceMillis) {
+                cachedNotFull = true;
+            }
+        }
+
+        boolean block = decideNaturalRegenBlock(config.blockNaturalRegenWhen(),
+                hasStance, cur, max, inConfiguredRegenGame(player), cachedNotFull);
+
+        if (config.blockNaturalRegenLog()) {
+            plugin.getLogger().info("[回血取证] " + player.getName() + " reason=SATIATED 架势="
+                    + String.format(java.util.Locale.ROOT, "%.1f/%.1f", cur, max)
+                    + " 决斗中=" + (hasStance ? "是" : "否")
+                    + " 残留读数=" + (last == null ? "无"
+                            : String.format(java.util.Locale.ROOT, "%.1f/%.1f", last[0], last[1])
+                              + (last[1] > 0.0 && last[0] < last[1] ? "(未满)" : "(满)"))
+                    + " 口径=" + config.blockNaturalRegenWhen()
+                    + " → " + (block ? "取消回血" : "放行"));
+        }
+        return block;
+    }
+
+    /**
+     * 自然回血阻断的<b>判定表</b>（纯函数，便于单测/推演；不含任何 Bukkit 状态）。
+     *
+     * @param scope            配置口径
+     * @param hasStance        此刻是否在 ACTIVE 决斗内（架势状态存在）
+     * @param cur, max         此刻的架势值（不在决斗时为 0/0）
+     * @param inConfiguredGame 是否身处 {@code stance.health-regen.games} 列出的对局/世界
+     * @param cachedNotFull    是否"刚打完决斗、且最后一次读到的架势没满"（残留读数）
+     * @return 是否取消这次自然回血
+     */
+    static boolean decideNaturalRegenBlock(StanceConfig.NaturalRegenScope scope,
+                                           boolean hasStance, double cur, double max,
+                                           boolean inConfiguredGame, boolean cachedNotFull) {
+        boolean block = switch (scope) {
+            case IN_DUEL -> hasStance;
+            case GAMES -> inConfiguredGame;
+            default -> hasStance && cur < max;
+        };
+        // 残留读数在任何口径下都生效：它就是"架势没满"这个事实本身，
+        // 不该因为 endDuel 把状态清了就消失。
+        return block || cachedNotFull;
+    }
+
+    /** 决斗结束：记下时间戳，供"刚打完的保护"判断。 */
+    public void onDuelEnded(UUID a, UUID b) {
+        long now = System.currentTimeMillis();
+        if (a != null) {
+            lastDuelEndAt.put(a, now);
+        }
+        if (b != null) {
+            lastDuelEndAt.put(b, now);
         }
     }
 
-    /** 触发崩条；若受击状态开启无法格挡，立刻强制盾牌冷却（阻止立即格挡 / 弹反）。 */
+    /**
+     * {@code games} 口径：玩家当前所在对局名或所在世界名命中配置列表即算"该断"。
+     *
+     * <p>对局名走 BedWars API；读不到（不在对局 / ScreamingBedWars 缺失）时用世界名兜底。
+     * API 不可用时保守返回 false（不误断）。</p>
+     */
+    private boolean inConfiguredRegenGame(Player player) {
+        List<String> games = config.blockNaturalRegenGames();
+        if (games == null || games.isEmpty()) {
+            return false;
+        }
+        if (player.getWorld() != null && matchesAny(games, player.getWorld().getName())) {
+            return true;
+        }
+        try {
+            return org.screamingsandals.bedwars.api.BedwarsAPI.getInstance().getPlayerManager()
+                    .getPlayer(player.getUniqueId())
+                    .map(org.screamingsandals.bedwars.api.player.BWPlayer::getGame)
+                    .map(game -> game != null && matchesAny(games, game.getName()))
+                    .orElse(false);
+        } catch (RuntimeException | LinkageError ex) {
+            return false;   // 保守：读不到就当没命中（不误断）
+        }
+    }
+
+    /** 列表命中（大小写不敏感，去空格）。 */
+    private static boolean matchesAny(List<String> games, String value) {
+        if (value == null) {
+            return false;
+        }
+        for (String g : games) {
+            if (g != null && g.equalsIgnoreCase(value.trim())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * 采样：决斗中每 5 tick 记一次 {@code current/max}；决斗结束后保留读数到
+     * {@code post-duel-grace-seconds} 过期为止（过期即丢弃）。
+     *
+     * <p>{@code blockNaturalRegenLog} 开启时额外做"血量上涨旁路监测"：血量涨了却
+     * 没有对应的回血事件 → 是有人直接改血量（秘传奖励/复活/其它插件），不受架势阻断管辖。</p>
+     */
+    private void watchStances() {
+        long now = System.currentTimeMillis();
+        long graceMillis = (long) (config.postDuelRegenGraceSeconds() * 1000.0);
+        for (Player p : plugin.getServer().getOnlinePlayers()) {
+            UUID id = p.getUniqueId();
+            if (config.blockNaturalRegenLog()) {
+                double hp = p.getHealth();
+                Double prev = lastHealthSeen.get(id);
+                lastHealthSeen.put(id, hp);
+                if (prev != null && hp > prev + 1.0e-4) {
+                    Long evAt = lastEventGainAt.get(id);
+                    boolean byEvent = evAt != null && now - evAt < 5000L;
+                    plugin.getLogger().info("[回血取证·血量] " + p.getName()
+                            + " 血量 " + String.format(java.util.Locale.ROOT, "%.1f→%.1f", prev, hp)
+                            + "（+" + String.format(java.util.Locale.ROOT, "%.1f", hp - prev) + "）"
+                            + " 架势=" + String.format(java.util.Locale.ROOT, "%.1f/%.1f",
+                                    stanceManager.getStance(id), stanceManager.getMaxStance(id))
+                            + " 决斗中=" + (stanceManager.hasStance(id) ? "是" : "否")
+                            + (byEvent ? " (事件型)" : " (旁路 setHealth 型 —— 不受架势阻断管辖，"
+                                    + "查秘传奖励/复活/其它插件)"));
+                }
+            }
+            if (stanceManager.hasStance(id)) {
+                lastStanceReading.put(id, new double[]{
+                        stanceManager.getStance(id), stanceManager.getMaxStance(id)});
+                continue;
+            }
+            Long endedAt = lastDuelEndAt.get(id);
+            if (endedAt == null || (graceMillis > 0 && now - endedAt > graceMillis)
+                    || (graceMillis <= 0)) {
+                lastStanceReading.remove(id);
+                lastDuelEndAt.remove(id);
+            }
+        }
+    }
+
+    /**
+     * <b>触发崩条</b>，并把目标打入「<b>破盾状态</b>」（处决窗口内不可举任何盾）。
+     *
+     * <p>不可举盾（盾与剑都冷却）的时长取 {@code stagger.duration-seconds} 与
+     * {@code execution-seconds} 的<b>较大者</b>，即覆盖<b>整个处决窗口</b> ——
+     * 崩条 = 门户大开，此时还能举盾格挡自相矛盾。</p>
+     */
     private void breakStance(Player player) {
         stanceManager.breakStance(player.getUniqueId());
-        if (config.disableBlocking() && config.staggerDurationSeconds() > 0.0) {
-            int ticks = Math.max(1, (int) Math.ceil(config.staggerDurationSeconds() * 20.0));
-            player.setCooldown(Material.SHIELD, ticks);
+        if (!config.disableBlocking()) {
+            return;
+        }
+        double seconds = Math.max(config.staggerDurationSeconds(), config.executionSeconds());
+        if (seconds <= 0.0) {
+            return;
+        }
+        // 走正规通道：窗口内 canBlock() 为假、isStaggered() 为真，
+        // 且周期任务会按剩余时长持续刷新冷却（强制收盾，含已举起的盾与剑）。
+        stanceManager.disableBlocking(player.getUniqueId(), seconds);
+        CombatUtils.disableBlockingItems(player, Math.max(1, (int) Math.ceil(seconds * 20.0)));
+    }
+
+    /**
+     * <b>打进处决窗口者的奖励</b>：<b>自身架势回满</b> + <b>回血</b>（默认 5 HP）。
+     *
+     * <p><b>为什么要给</b>：把对手打崩是进攻成功的成果，但处决窗口本身是<b>对方的逃离窗口</b>——
+     * 若没有正反馈，"抢先手压架势"就只替对手创造机会，收益不对称。
+     * 奖励方是<b>造成崩条的一方</b>（未格挡命中 / 举盾击破 / 完美弹反）。</p>
+     *
+     * <p><b>边界</b>：若奖励方自己也在崩条状态（双方几乎同时崩），跳过奖励 ——
+     * 否则刚把架势设满就被自身崩条逻辑清零，观感是"奖励没生效"。</p>
+     *
+     * @param breaker 造成本次崩条的一方；null / 离线时不做任何事
+     */
+    private void rewardBreaker(Player breaker) {
+        if (breaker == null || !breaker.isOnline()) {
+            return;
+        }
+        if (!config.breakerRewardEnabled()) {
+            return;
+        }
+        UUID uuid = breaker.getUniqueId();
+        if (stanceManager.isBroken(uuid)) {
+            return;
+        }
+        boolean did = false;
+        // ① 架势回满
+        if (config.breakerRewardRefillStance()) {
+            double max = stanceManager.getMaxStance(uuid);
+            if (max > 0.0) {
+                stanceManager.setStance(uuid, max);
+                did = true;
+            }
+        }
+        // ② 回血（封顶到最大生命值）
+        double heal = config.breakerRewardHealHp();
+        if (heal > 0.0) {
+            double maxHp = 20.0;
+            try {
+                var attr = breaker.getAttribute(org.bukkit.attribute.Attribute.MAX_HEALTH);
+                if (attr != null) {
+                    maxHp = attr.getValue();
+                }
+            } catch (RuntimeException ignored) {
+                // 取不到就退回默认 20，不因为"读不到属性"而丢掉奖励
+            }
+            double after = Math.min(maxHp, breaker.getHealth() + heal);
+            if (after > breaker.getHealth()) {
+                breaker.setHealth(after);
+                did = true;
+            }
+        }
+        if (did) {
+            breaker.spigot().sendMessage(ChatMessageType.ACTION_BAR,
+                    new TextComponent("§a§l你把对方打进了处决窗口！§f架势回满"
+                            + (heal > 0.0 ? " §7+§f" + String.format(java.util.Locale.ROOT, "%.1f", heal) + " 血" : "")));
         }
     }
 
@@ -295,7 +568,7 @@ public final class StanceBreakManager {
                 continue;
             }
             int ticks = Math.max(1, (int) Math.ceil(remaining / 50.0));
-            player.setCooldown(Material.SHIELD, ticks);
+            CombatUtils.disableBlockingItems(player, ticks);   // 处决窗口/受击状态：盾与剑都禁
         }
     }
 }

@@ -392,7 +392,11 @@ public final class StanceManager {
         }
         long now = System.currentTimeMillis();
         long brokenUntil = now + (long) (config.executionSeconds() * 1000.0);
-        long guardUntil = now + (long) (config.staggerDurationSeconds() * 1000.0);
+        // ★ 处决窗口 = 破盾状态：崩条期间"无法举任何盾"必须覆盖<b>整个处决窗口</b>，
+        //   而不是只覆盖短暂受击状态（否则崩条后第 5~25 秒能正常举盾，与"门户大开"矛盾）。
+        //   取二者较大者，避免以后单独调短 stagger 又漏出"能举盾的处决窗口"。
+        double guardSeconds = Math.max(config.staggerDurationSeconds(), config.executionSeconds());
+        long guardUntil = now + (long) (guardSeconds * 1000.0);
         double before = stance.getCurrent();
         stance.breakStance(brokenUntil, guardUntil);
         notifyChange(uuid, before, stance.getCurrent()); // 崩条清零对外可见（StanceBreakEvent 另有专报）

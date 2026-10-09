@@ -23,4 +23,17 @@ public final class StanceBreakListener implements Listener {
     public void onRegainHealth(EntityRegainHealthEvent event) {
         manager.handleRegainHealth(event);
     }
+
+    /**
+     * 决斗结束：记下时间戳。决斗结束时架势状态会被清掉，随后那几秒"读不到架势"，
+     * 原判定会放行自然回血 —— 由 {@link StanceBreakManager#onDuelEnded} 记时，
+     * 让这段空档继续断回血（见 {@code stance.health-regen.post-duel-grace-seconds}）。
+     */
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onDuelEnded(org.alpha.sekiroBedwar.event.DuelEndedEvent event) {
+        if (event == null || event.getDuel() == null) {
+            return;
+        }
+        manager.onDuelEnded(event.getDuel().getPlayerAUuid(), event.getDuel().getPlayerBUuid());
+    }
 }

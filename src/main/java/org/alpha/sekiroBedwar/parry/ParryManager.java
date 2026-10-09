@@ -259,7 +259,7 @@ public final class ParryManager {
         // 受击状态）并把盾牌冷却归零——完美弹反是终极防御动作，防御能力立即恢复，
         // 不会因之前被斧头破盾而仍然举不了盾。
         stanceManager.clearBlockingDisable(victim.getUniqueId());
-        victim.setCooldown(Material.SHIELD, 0);
+        CombatUtils.clearBlockingItems(victim);            // 清冷却也要清剑（对称）
         // 一次按下只弹反一击：消耗本次格挡按住（holdConsumed 置位），
         // 同一按住中的后续命中按普通格挡处理（连击 / 快速攻击不会因同一按下被连续判为完美弹反）。
         // 纸人弹反窗口（forced）不消耗——窗口内每一击都要弹反，且不得污染窗口结束后的普通判定。

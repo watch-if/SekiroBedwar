@@ -1,5 +1,5 @@
 name: SekiroBedwar
-version: '1.6.0'
+version: '1.7.0'
 
 main: org.alpha.sekiroBedwar.SekiroBedwar
 api-version: '1.21.11'

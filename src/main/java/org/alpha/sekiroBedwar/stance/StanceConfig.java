@@ -41,6 +41,12 @@ public final class StanceConfig {
     private double executionSeconds;
     private double staggerDurationSeconds;
     private boolean disableBlocking;
+    /** 打进处决窗口的一方是否获得奖励（{@code stance.break.breaker-reward.*}，默认开启）。 */
+    private boolean breakerRewardEnabled;
+    /** 打进处决窗口者的回血量（HP；默认 5.0）。 */
+    private double breakerRewardHealHp;
+    /** 打进处决窗口者的架势是否回满（默认 true）。 */
+    private boolean breakerRewardRefillStance;
     private int guardCheckTicks;
     private int settleCheckTicks;
     private double lowHealthThreshold;
@@ -48,6 +54,14 @@ public final class StanceConfig {
     private boolean breakOnUnblockedHit;
     private boolean breakOnParriedAttack;
     private boolean blockNaturalRegen;
+    /** 断自然回血的判定口径（{@code stance.health-regen.block-when}）。 */
+    private NaturalRegenScope blockNaturalRegenWhen;
+    /** {@code GAMES} 口径下命中即断的对局名 / 世界名（{@code stance.health-regen.games}）。 */
+    private List<String> blockNaturalRegenGames;
+    /** 决斗刚结束后继续断自然回血的保护秒数（{@code stance.health-regen.post-duel-grace-seconds}）。 */
+    private double postDuelRegenGraceSeconds;
+    /** 回血取证日志（{@code stance.health-regen.log}，默认 false）。 */
+    private boolean blockNaturalRegenLog;
 
     // 处决窗口破甲（崩条后被处决者护甲无效：命中按纯血伤结算）
     private boolean executionArmorEnabled;
@@ -89,6 +103,11 @@ public final class StanceConfig {
         this.executionSeconds = Math.max(0.0, yaml.getDouble("stance.break.execution-seconds", 25.0));
         this.staggerDurationSeconds = Math.max(0.0, yaml.getDouble("stance.break.stagger.duration-seconds", 5.0));
         this.disableBlocking = yaml.getBoolean("stance.break.stagger.disable-blocking", true);
+        // ★ 打进处决窗口的一方获得奖励（架势回满 + 回血）：把对手打崩是进攻成果，
+        //   但处决窗口本身是"对方的逃离窗口"，没有正反馈的话收益不对称。
+        this.breakerRewardEnabled = yaml.getBoolean("stance.break.breaker-reward.enabled", true);
+        this.breakerRewardHealHp = Math.max(0.0, yaml.getDouble("stance.break.breaker-reward.heal-hp", 5.0));
+        this.breakerRewardRefillStance = yaml.getBoolean("stance.break.breaker-reward.refill-stance", true);
         this.guardCheckTicks = Math.max(1, yaml.getInt("stance.break.guard-check-ticks", 5));
         this.settleCheckTicks = Math.max(1, yaml.getInt("stance.break.settle-check-ticks", 5));
         this.lowHealthThreshold = Math.max(0.0, yaml.getDouble("stance.break.low-health-threshold", 2.0));
@@ -96,6 +115,21 @@ public final class StanceConfig {
         this.breakOnUnblockedHit = yaml.getBoolean("stance.break.trigger.break-on-unblocked-hit", true);
         this.breakOnParriedAttack = yaml.getBoolean("stance.break.trigger.break-on-parried-attack", true);
         this.blockNaturalRegen = yaml.getBoolean("stance.health-regen.block-natural", true);
+        // 口径（block-when）：何时断自然回血。
+        //   stance-not-full = 在决斗中且架势未满才断（架势回满后可自然回血）★默认
+        //   in-duel         = 只要在决斗中就一律断（不看架势满不满）
+        //   games           = 只要身处 games 列出的对局/世界就一律断（不看决斗、不看架势）
+        //
+        // ★ 为什么还需要「残留读数」机制（见 StanceBreakManager.shouldBlockNaturalRegen）：
+        //   决斗结束时 endDuel 会把架势状态整个清掉（hasStance=false、cur=max=0），
+        //   于是 `cur < max` 立刻不成立 → 自然回血被放行，表现就是"架势没满却还能回血"。
+        //   所以除了实时读数，还要沿用决斗内最后一次读数（post-duel-grace-seconds 秒内）。
+        String scopeRaw = yaml.getString("stance.health-regen.block-when");
+        this.blockNaturalRegenWhen = parseRegenScope(scopeRaw);
+        this.blockNaturalRegenGames = yaml.getStringList("stance.health-regen.games");
+        this.postDuelRegenGraceSeconds = Math.max(0.0,
+                yaml.getDouble("stance.health-regen.post-duel-grace-seconds", 5.0));
+        this.blockNaturalRegenLog = yaml.getBoolean("stance.health-regen.log", false);
 
         this.executionArmorEnabled = yaml.getBoolean("stance.break.execution-armor.enabled", true);
         this.executionArmorStripEnchant = yaml.getBoolean("stance.break.execution-armor.strip-enchant", true);
@@ -197,6 +231,20 @@ public final class StanceConfig {
     /** 受击状态期间是否无法正常格挡（默认 true；false 时退化为纯状态标记，不做盾牌冷却强制）。 */
     public boolean disableBlocking() {
         return disableBlocking;
+    }
+    /** 打进处决窗口的一方是否获得奖励（默认开启）。 */
+    public boolean breakerRewardEnabled() {
+        return breakerRewardEnabled;
+    }
+
+    /** 打进处决窗口者的回血量（HP；默认 5.0，0 = 不回血）。 */
+    public double breakerRewardHealHp() {
+        return breakerRewardHealHp;
+    }
+
+    /** 打进处决窗口者的架势是否回满（默认 true）。 */
+    public boolean breakerRewardRefillStance() {
+        return breakerRewardRefillStance;
     }
 
     /** 受击状态强制的检测间隔（tick）。 */
@@ -232,6 +280,54 @@ public final class StanceConfig {
     /** 是否在架势非满（current < max）时阻断自然回血（仅 SATIATED）。 */
     public boolean blockNaturalRegen() {
         return blockNaturalRegen;
+    }
+
+    /** 断自然回血的判定口径（默认 {@code STANCE_NOT_FULL}）。 */
+    public NaturalRegenScope blockNaturalRegenWhen() {
+        return blockNaturalRegenWhen;
+    }
+
+    /** {@code GAMES} 口径下命中即断的对局名 / 世界名列表（大小写不敏感）。 */
+    public List<String> blockNaturalRegenGames() {
+        return blockNaturalRegenGames;
+    }
+
+    /** 决斗刚结束后继续断自然回血的保护秒数（默认 5；0 = 关闭）。 */
+    public double postDuelRegenGraceSeconds() {
+        return postDuelRegenGraceSeconds;
+    }
+
+    /** 回血取证日志开关（默认 false）。 */
+    public boolean blockNaturalRegenLog() {
+        return blockNaturalRegenLog;
+    }
+
+    /**
+     * 自然回血阻断的判定口径。
+     *
+     * <ul>
+     *   <li>{@link #STANCE_NOT_FULL}（默认）：在决斗中且架势未满（current &lt; max）才断 ——
+     *       架势回满后自然回血恢复（"逼迫双方去攻击对方"）；</li>
+     *   <li>{@link #IN_DUEL}：只要在决斗中就一律断（不看架势满不满）；</li>
+     *   <li>{@link #GAMES}：只要身处 {@code stance.health-regen.games} 列出的对局/世界，
+     *       一律断（不看是否在决斗、也不看架势）。</li>
+     * </ul>
+     */
+    public enum NaturalRegenScope {
+        STANCE_NOT_FULL,
+        IN_DUEL,
+        GAMES
+    }
+
+    private static NaturalRegenScope parseRegenScope(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return NaturalRegenScope.STANCE_NOT_FULL;
+        }
+        return switch (raw.trim().toLowerCase(Locale.ROOT)) {
+            case "in-duel", "duel", "决斗内" -> NaturalRegenScope.IN_DUEL;
+            case "games", "game", "arena", "arenas", "指定对局" -> NaturalRegenScope.GAMES;
+            default -> NaturalRegenScope.STANCE_NOT_FULL;
+        };
     }
 
     /** 处决窗口破甲：崩条（处决窗口开启）期间被处决者的护甲无效（默认 true）。 */

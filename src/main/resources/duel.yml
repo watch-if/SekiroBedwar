@@ -72,6 +72,18 @@ stance:
       break-on-unblocked-hit: true
       # 临界中自己的攻击被对方（近战）完美弹反 → 崩条
       break-on-parried-attack: true
+    # 打进处决窗口的一方获得奖励（默认开启）。
+    # 语义：把对手打崩（送进处决窗口）是进攻成功的成果，理应正反馈 ——
+    # 否则"抢先手压架势"只替对手创造逃离窗口，收益不对称。
+    # 奖励方 = 造成崩条的一方（未格挡命中 / 举盾击破 / 完美弹反），不含被崩的一方。
+    # 边界：奖励方自己也在崩条状态（双方几乎同时崩）时跳过奖励。
+    breaker-reward:
+      # 是否启用
+      enabled: true
+      # 回血量（HP；0 = 不回血，封顶到最大生命值）
+      heal-hp: 5.0
+      # 自身架势是否回满
+      refill-stance: true
     # 受击状态强制的检测间隔（tick；5 = 0.25 秒）
     guard-check-ticks: 5
     # 结算模块周期检测“处决窗口是否到期”的间隔（tick；5 = 0.25 秒）
@@ -80,6 +92,24 @@ stance:
   # 只阻断饥饿值触发的自然回血（SATIATED）；金苹果 / 药水等主动治疗不受影响。
   health-regen:
     block-natural: true
+    # 断自然回血的判定口径：
+    #   stance-not-full = 在决斗中且架势未满才断（架势回满后恢复自然回血）★默认
+    #   in-duel         = 只要在决斗中就一律断（不看架势满不满）
+    #   games           = 只要身处 games 列出的对局/世界就一律断（不看决斗、不看架势）
+    #
+    # ★ 为什么需要"残留读数"（见 StanceBreakManager.shouldBlockNaturalRegen）：
+    #   决斗结束时 endDuel 会清掉架势状态（hasStance=false、cur=max=0）→ 原判定 `cur < max`
+    #   立刻不成立 → 自然回血放行，表现就是"架势没满却还能回血"。
+    #   所以除了实时读数，还沿用决斗内最后一次读数（下面的 grace 秒内）。
+    block-when: stance-not-full
+    # block-when: games 时生效；对局名或世界名都认（大小写不敏感）。
+    # 留空 = 不做该口径的额外拦截。
+    games: []
+    # 决斗结束后的保护秒数：这段时间内继续沿用决斗内最后读数（补掉 endDuel 的空档）。
+    # 0 = 关闭。
+    post-duel-grace-seconds: 5.0
+    # 回血取证日志（控制台 [回血取证] 行；默认 false）。
+    log: false
   # 架势自然恢复：每秒 dS/dt = +r * Smax * (1/2 + x/2)，x = S/Smax（当前/最大）
   # 架势越接近满恢复越快（封顶于 max，满则停），
   # 越接近崩条恢复越慢（被打到低谷后需一段时间才能爬回，保留崩条压力）；崩条（处决窗口）期间不恢复。

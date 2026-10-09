@@ -169,7 +169,7 @@ public final class BlockManager {
                 if (config.shieldBreakEnabled() && isShieldBreaker(attacker)) {
                     stanceManager.disableBlocking(victim.getUniqueId(), config.shieldBreakDisableBlockingSeconds());
                     int ticks = Math.max(1, (int) Math.ceil(config.shieldBreakDisableBlockingSeconds() * 20.0));
-                    victim.setCooldown(Material.SHIELD, ticks);
+                    CombatUtils.disableBlockingItems(victim, ticks);   // 盾与剑都冷却（剑装了 blocks_attacks）
                     double loss = db * config.shieldBreakStanceMultiplier();
                     stanceManager.reduceStanceBy(attacker.getUniqueId(), victim.getUniqueId(), loss);
                     org.alpha.sekiroBedwar.api.internal.SekiroApiImpl.shieldBreak(victim.getUniqueId(),

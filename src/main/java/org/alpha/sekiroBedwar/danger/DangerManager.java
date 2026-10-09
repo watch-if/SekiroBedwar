@@ -168,7 +168,7 @@ public final class DangerManager {
     public void applyShieldBreak(Player attacker, Player victim) {
         stanceManager.disableBlocking(victim.getUniqueId(), config.shieldBreakSeconds());
         int ticks = Math.max(1, (int) Math.ceil(config.shieldBreakSeconds() * 20.0));
-        victim.setCooldown(Material.SHIELD, ticks);
+        CombatUtils.disableBlockingItems(victim, ticks);   // 盾与剑都冷却
         stanceManager.reduceStanceBy(attacker.getUniqueId(), victim.getUniqueId(), config.stancePenalty());
     }
 

@@ -1,6 +1,7 @@
 package org.alpha.sekiroBedwar.deflect;
 
 import org.alpha.sekiroBedwar.SekiroBedwar;
+import org.alpha.sekiroBedwar.combat.CombatUtils;
 import org.alpha.sekiroBedwar.paperdoll.PaperDollManager;
 import org.alpha.sekiroBedwar.shop.BuyContext;
 import org.alpha.sekiroBedwar.shop.SekiroShopManager;
@@ -139,7 +140,7 @@ public final class DeflectManager {
             deflectUntil.remove(entry.getKey());
             Player player = Bukkit.getPlayer(entry.getKey());
             if (player != null && player.isOnline()) {
-                player.setCooldown(Material.SHIELD, 1);
+                CombatUtils.disableBlockingItems(player, 1);       // 强制收盾也要收剑
             }
         }
     }
